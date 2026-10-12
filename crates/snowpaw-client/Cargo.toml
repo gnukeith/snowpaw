@@ -1,0 +1,51 @@
+[package]
+name = "snowpaw-client"
+description = "snowpaw desktop client"
+license = "AGPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "snowpaw"
+path = "src/main.rs"
+
+[dependencies]
+snowpaw-proto.workspace = true
+slint.workspace = true
+tokio = { workspace = true, features = ["process"] }
+rustls.workspace = true
+tokio-rustls.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+hyper = { workspace = true, features = ["client"] }
+hyper-util.workspace = true
+serde.workspace = true
+toml.workspace = true
+sha2.workspace = true
+getrandom.workspace = true
+zeroize.workspace = true
+pulldown-cmark.workspace = true
+rfd.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+
+[dev-dependencies]
+snowpaw-server = { path = "../snowpaw-server" }
+tempfile.workspace = true
+
+# Same as the workspace lints, except `unsafe_code` is "deny" instead of "forbid":
+# Slint's generated UI code needs `#[allow(unsafe_code)]` for its vtables, and
+# "forbid" can't be overridden. Our own code still can't use `unsafe` without an
+# explicit allow, and CI rejects any `allow(unsafe_code)` in our sources.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+unwrap_used = "warn"
+dbg_macro = "deny"
+todo = "deny"

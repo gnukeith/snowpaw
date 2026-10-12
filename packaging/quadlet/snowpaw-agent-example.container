@@ -1,0 +1,34 @@
+# One agent runtime. Make a copy per agent (snowpaw-agent-<name>.container) and
+# change the three marked lines.
+[Unit]
+Description=snowpaw agent runtime (example)
+After=snowpaw-server.service
+Wants=snowpaw-server.service
+
+[Container]
+Image=localhost/snowpaw-agent:latest
+# CHANGE: one name per agent.
+ContainerName=snowpaw-agent-example
+# Only the internal network: the runtime can reach the server's agent listener and
+# nothing else. Model calls and plugin fetches go through the server.
+Network=snowpaw-agents.network
+# CHANGE: the agent's token, stored with `podman secret create snowpaw-agent-example -`.
+Secret=snowpaw-agent-example,target=/run/secrets/token,uid=65532,gid=65532,mode=0400
+# CHANGE: the agent's config (server = the agent connection code, token_file =
+# /run/secrets/token).
+Volume=%h/.config/snowpaw/agents/example.toml:/etc/snowpaw-agent/agent.toml:ro,Z
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+User=65532
+Group=65532
+# Plugins run here (in wasmtime, with their own limits); bound the whole runtime too.
+PodmanArgs=--memory=512m --pids-limit=128 --cpus=1
+
+[Service]
+# A revoked token makes the runtime exit; don't hammer the server with restarts.
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

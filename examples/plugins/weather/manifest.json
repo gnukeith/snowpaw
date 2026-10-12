@@ -1,0 +1,21 @@
+{
+  "api": 1,
+  "name": "weather",
+  "version": "1.0.0",
+  "description": "Current weather for a place, from Open-Meteo (no API key needed).",
+  "tools": [
+    {
+      "name": "current",
+      "description": "Current temperature and wind at a latitude and longitude.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+          "longitude": { "type": "number", "minimum": -180, "maximum": 180 }
+        },
+        "required": ["latitude", "longitude"]
+      }
+    }
+  ],
+  "capabilities": { "http": ["api.open-meteo.com"] }
+}

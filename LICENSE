@@ -1,0 +1,11 @@
+snowpaw is licensed per crate:
+
+- crates/snowpaw-proto (the wire protocol) and the future plugin SDK:
+  Apache License 2.0 — see LICENSES/Apache-2.0.txt.
+  Anyone can build clients, agents, or plugins on these under any license.
+
+- Everything else (the sync server, agent runtime, and desktop client):
+  GNU Affero General Public License v3.0 or later — see LICENSES/AGPL-3.0-or-later.txt.
+  If you run a modified version as a network service, you must offer its source.
+
+Each crate's Cargo.toml `license` field is authoritative for that crate.

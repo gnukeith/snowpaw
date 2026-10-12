@@ -1,0 +1,848 @@
+// snowpaw desktop client UI.
+//
+// Everything shown here that came from the network (names, message text, previews)
+// is rendered with plain `Text`, or as `styled-text` the app built from escaped
+// markdown; it is never interpreted as markup here.
+//
+// Layout: sidebar | conversation | details. Below `Metrics.wide` the details panel
+// takes the sidebar's place instead of squeezing the conversation. Nothing is drawn
+// over the scrolling timeline.
+
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { PawMark, Wordmark } from "icons.slint";
+import { AgentLinkRow, AgentSetup, AuditRow, ChatRow, Conversation, HostRow, JobRow, MessageRow, MsgBlock, Person, PluginAgentRow, PluginPreview, PluginRow, PluginTool, Quiz, QuizQuestion, TimelineRow } from "types.slint";
+import { PluginsView, PluginPreviewDialog } from "plugins.slint";
+import { TokenDialog } from "dialogs.slint";
+import { NewJobDialog } from "jobs.slint";
+import { Sidebar } from "sidebar.slint";
+import { ConversationView, EmptyConversation } from "conversation.slint";
+import { DetailsPanel } from "details.slint";
+import { SettingsView } from "settings.slint";
+import { AgentEditor } from "agent_editor.slint";
+import { Onboarding } from "onboarding.slint";
+
+export { Theme, AgentLinkRow, AgentSetup, AuditRow, ChatRow, Conversation, HostRow, JobRow, MessageRow, MsgBlock, Person, PluginAgentRow, PluginPreview, PluginRow, PluginTool, Quiz, QuizQuestion, TimelineRow }
+
+component MainPage inherits Rectangle {
+    in property <[ChatRow]> chats;
+    in property <[ChatRow]> pinned;
+    in property <string> selected-chat;
+    in property <Conversation> conversation;
+    in property <[TimelineRow]> timeline;
+    in property <string> status;
+    in property <string> connection;
+    in property <string> notice;
+    in property <string> server-address;
+    in property <string> server-fingerprint;
+    in property <string> server-fingerprint-short;
+    in property <bool> welcome;
+    callback open-chat(string);
+    callback send(string) -> bool;
+    callback logout();
+    callback search(string);
+    callback toggle-pin(string);
+    callback set-font(string);
+    callback set-appearance(string);
+    callback set-reduce-motion(bool);
+    callback dismiss-welcome();
+
+    // The agent editor: "" (closed) | "create" | "edit".
+    in-out property <string> editor-mode;
+    in-out property <string> editor-name;
+    in-out property <string> editor-label;
+    in-out property <string> editor-about;
+    in property <string> editor-name-error;
+    in property <string> editor-label-error;
+    in property <string> editor-about-error;
+    in property <bool> editor-valid;
+    in property <string> editor-initials;
+    in property <string> editor-picture-name;
+    callback editor-validate(string, string, string);
+    callback choose-picture(string);
+    callback remove-picture(string);
+    callback create-agent(string, string, string);
+    callback update-agent(string, string, string, string);
+
+    // Agents: model, runtime, links, the kill switch; quizzes; the security log.
+    in property <bool> agents-paused;
+    in property <string> model-error;
+    in property <[AuditRow]> audit;
+    in property <bool> audit-has-more;
+    callback set-agents-paused(bool);
+    callback save-model(string, [string]);
+    callback issue-token(string);
+    callback revoke-token(string);
+    callback set-agent-link(string, string, bool);
+    callback quiz-pick(string, int, int);
+    callback quiz-submit(string);
+    callback quiz-retry(string);
+    callback load-audit(bool);
+
+    // Jobs.
+    callback new-job();
+    callback approve-job(string);
+    callback cancel-job(string);
+    callback run-job(string);
+
+    in property <string> app-version;
+
+    // Plugins.
+    in property <[PluginRow]> plugins;
+    in-out property <bool> plugins-open;
+    callback plugins-opened();
+    callback install-plugin();
+    callback grant-plugin(string, string, [string]);
+    callback revoke-plugin(string, string);
+    callback toggle-plugin-host(string, string, string);
+    callback remove-plugin(string);
+
+    in-out property <bool> settings-open;
+    in-out property <string> draft;
+    in-out property <string> search-text;
+    in-out property <bool> searching;
+    in-out property <int> details-tab;
+    // Whether the details panel is wanted, separately for wide and narrow windows:
+    // open by default when there is room for it, closed otherwise.
+    in-out property <bool> details-wide: true;
+    in-out property <bool> details-narrow;
+
+    property <bool> wide: root.width >= Metrics.wide;
+    property <bool> editing: root.editor-mode != "";
+    // Settings, the agent editor and Plugins each take the conversation's place.
+    property <bool> covered: root.settings-open || root.editing || root.plugins-open;
+    property <bool> show-details: root.conversation.open && !root.covered && (root.wide ? root.details-wide : root.details-narrow);
+    property <bool> show-sidebar: root.wide || !root.show-details;
+
+    public function focus-composer() {
+        conversation-view.focus-composer();
+    }
+
+    public function open-plugins() {
+        root.settings-open = false;
+        root.editor-mode = "";
+        root.plugins-open = true;
+        root.plugins-opened();
+    }
+
+    public function new-agent() {
+        root.plugins-open = false;
+        root.settings-open = false;
+        root.editor-name = "";
+        root.editor-label = "";
+        root.editor-about = "";
+        root.editor-mode = "create";
+        root.editor-validate("", "", "");
+    }
+
+    public function edit-agent() {
+        root.plugins-open = false;
+        root.settings-open = false;
+        root.editor-name = root.conversation.people[0].name;
+        root.editor-label = root.conversation.people[0].label;
+        root.editor-about = root.conversation.about;
+        root.editor-mode = "edit";
+        root.editor-validate(root.editor-name, root.editor-label, root.editor-about);
+    }
+
+    public function reset() {
+        root.plugins-open = false;
+        root.editor-mode = "";
+        root.settings-open = false;
+        root.draft = "";
+        root.search-text = "";
+        root.searching = false;
+        root.details-tab = 0;
+        root.details-narrow = false;
+    }
+
+    function toggle-details() {
+        if (root.wide) {
+            root.details-wide = !root.show-details;
+        } else {
+            root.details-narrow = !root.show-details;
+        }
+    }
+
+    background: Theme.ground;
+
+    // Keyboard shortcuts, wherever the focus is in the main window.
+    FocusScope {
+        focus-on-click: false;
+        focus-on-tab-navigation: false;
+        capture-key-pressed(e) => {
+            if (e.modifiers.control && e.text == "k") {
+                root.editor-mode = "";
+                root.searching = true;
+                return accept;
+            }
+            if (e.modifiers.control && e.text == "n") {
+                root.new-agent();
+                return accept;
+            }
+            if (e.modifiers.control && e.text == ",") {
+                root.editor-mode = "";
+                root.settings-open = true;
+                return accept;
+            }
+            if (e.text == Key.Escape) {
+                if (root.editor-mode != "") {
+                    root.editor-mode = "";
+                    return accept;
+                }
+                if (root.settings-open) {
+                    root.settings-open = false;
+                    return accept;
+                }
+                if (root.plugins-open) {
+                    root.plugins-open = false;
+                    return accept;
+                }
+                if (root.searching) {
+                    root.searching = false;
+                    root.search-text = "";
+                    root.search("");
+                    return accept;
+                }
+            }
+            reject
+        }
+
+        HorizontalLayout {
+            if root.show-sidebar: Sidebar {
+                width: Metrics.sidebar-width;
+                chats: root.chats;
+                pinned: root.pinned;
+                selected-chat: root.selected-chat;
+                connection: root.connection;
+                status: root.status;
+                server-address: root.server-address;
+                server-fingerprint: root.server-fingerprint-short;
+                search-text <=> root.search-text;
+                searching <=> root.searching;
+                agents-paused: root.agents-paused;
+                set-agents-paused(on) => {
+                    root.set-agents-paused(on);
+                }
+                open-chat(id) => {
+                    root.settings-open = false;
+                    root.plugins-open = false;
+                    root.editor-mode = "";
+                    root.open-chat(id);
+                }
+                open-plugins => {
+                    root.open-plugins();
+                }
+                new-agent => {
+                    root.new-agent();
+                }
+                search(t) => {
+                    root.search(t);
+                }
+                open-settings => {
+                    root.editor-mode = "";
+                    root.plugins-open = false;
+                    root.settings-open = true;
+                }
+                logout => {
+                    root.logout();
+                }
+            }
+            if root.show-sidebar: Rectangle {
+                width: 1px;
+                background: Theme.line;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                // Placed explicitly so its size doesn't feed back into the columns.
+                conversation-view := ConversationView {
+                    x: 0;
+                    y: 0;
+                    width: 100%;
+                    height: 100%;
+                    visible: root.conversation.open && !root.covered;
+                    chat: root.conversation;
+                    timeline: root.timeline;
+                    notice: root.notice;
+                    details-open: root.show-details;
+                    show-welcome: root.welcome;
+                    draft <=> root.draft;
+                    dismiss-welcome => {
+                        root.dismiss-welcome();
+                    }
+                    add-agent => {
+                        root.new-agent();
+                    }
+                    quiz-pick(m, q, c) => {
+                        root.quiz-pick(m, q, c);
+                    }
+                    quiz-submit(m) => {
+                        root.quiz-submit(m);
+                    }
+                    quiz-retry(m) => {
+                        root.quiz-retry(m);
+                    }
+                    set-agent-link(a, b, on) => {
+                        root.set-agent-link(a, b, on);
+                    }
+                    approve-job(id) => {
+                        root.approve-job(id);
+                    }
+                    cancel-job(id) => {
+                        root.cancel-job(id);
+                    }
+                    run-job(id) => {
+                        root.run-job(id);
+                    }
+                    send(text) => {
+                        return root.send(text);
+                    }
+                    open-chat(id) => {
+                        root.open-chat(id);
+                    }
+                    toggle-details => {
+                        root.toggle-details();
+                    }
+                }
+                if !root.conversation.open && !root.covered: EmptyConversation {
+                    width: 100%;
+                    height: 100%;
+                }
+                if root.editing: AgentEditor {
+                    x: 0;
+                    y: 0;
+                    width: 100%;
+                    height: 100%;
+                    creating: root.editor-mode == "create";
+                    person: root.conversation.people[0];
+                    agent-id: root.conversation.agent-id;
+                    name <=> root.editor-name;
+                    label <=> root.editor-label;
+                    about <=> root.editor-about;
+                    name-error: root.editor-name-error;
+                    label-error: root.editor-label-error;
+                    about-error: root.editor-about-error;
+                    valid: root.editor-valid;
+                    initials: root.editor-initials;
+                    picture-name: root.editor-picture-name;
+                    notice: root.notice;
+                    setup: root.conversation.setup;
+                    model-error: root.model-error;
+                    save-model(id, f) => {
+                        root.save-model(id, f);
+                    }
+                    issue-token(id) => {
+                        root.issue-token(id);
+                    }
+                    revoke-token(id) => {
+                        root.revoke-token(id);
+                    }
+                    set-link(a, b, on) => {
+                        root.set-agent-link(a, b, on);
+                    }
+                    validate(n, l, a) => {
+                        root.editor-validate(n, l, a);
+                    }
+                    choose-picture(id) => {
+                        root.choose-picture(id);
+                    }
+                    remove-picture(id) => {
+                        root.remove-picture(id);
+                    }
+                    create(n, l, a) => {
+                        root.editor-mode = "";
+                        root.create-agent(n, l, a);
+                    }
+                    update(id, n, l, a) => {
+                        root.editor-mode = "";
+                        root.update-agent(id, n, l, a);
+                    }
+                    close => {
+                        root.editor-mode = "";
+                    }
+                }
+                if root.plugins-open: PluginsView {
+                    x: 0;
+                    y: 0;
+                    width: 100%;
+                    height: 100%;
+                    plugins: root.plugins;
+                    close => {
+                        root.plugins-open = false;
+                    }
+                    install => {
+                        root.install-plugin();
+                    }
+                    grant(a, p, hosts) => {
+                        root.grant-plugin(a, p, hosts);
+                    }
+                    revoke(a, p) => {
+                        root.revoke-plugin(a, p);
+                    }
+                    toggle-host(a, p, h) => {
+                        root.toggle-plugin-host(a, p, h);
+                    }
+                    remove(p) => {
+                        root.remove-plugin(p);
+                    }
+                }
+                if root.settings-open: SettingsView {
+                    x: 0;
+                    y: 0;
+                    width: 100%;
+                    height: 100%;
+                    server-address: root.server-address;
+                    server-fingerprint: root.server-fingerprint;
+                    audit: root.audit;
+                    audit-has-more: root.audit-has-more;
+                    app-version: root.app-version;
+                    load-audit(older) => {
+                        root.load-audit(older);
+                    }
+                    close => {
+                        root.settings-open = false;
+                    }
+                    set-font(f) => {
+                        root.set-font(f);
+                    }
+                    set-appearance(a) => {
+                        root.set-appearance(a);
+                    }
+                    set-reduce-motion(on) => {
+                        root.set-reduce-motion(on);
+                    }
+                }
+            }
+
+            if root.show-details: Rectangle {
+                width: 1px;
+                background: Theme.line;
+            }
+            if root.show-details: DetailsPanel {
+                width: Metrics.panel-width;
+                chat: root.conversation;
+                tab <=> root.details-tab;
+                close => {
+                    root.toggle-details();
+                }
+                open-chat(id) => {
+                    root.open-chat(id);
+                }
+                toggle-pin(id) => {
+                    root.toggle-pin(id);
+                }
+                edit-agent => {
+                    root.edit-agent();
+                }
+                new-job => {
+                    root.new-job();
+                }
+                approve-job(id) => {
+                    root.approve-job(id);
+                }
+                cancel-job(id) => {
+                    root.cancel-job(id);
+                }
+                run-job(id) => {
+                    root.run-job(id);
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "snowpaw";
+    // From design/icon/snowpaw/linux (macOS takes the Dock icon from the app bundle).
+    icon: @image-url("art/app-icon.svg");
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    min-width: 760px;
+    min-height: 520px;
+    background: Theme.ground;
+    default-font-family: Theme.font-family;
+    default-font-size: TextSize.body;
+
+    // "loading" | "setup" | "login" | "main"
+    in property <string> page: "loading";
+
+    // Setup and login (the onboarding flow)
+    in-out property <string> setup-address;
+    in-out property <string> setup-fingerprint;
+    in-out property <string> setup-code;
+    in-out property <bool> setup-manual;
+    in property <string> setup-error;
+    in property <bool> setup-can-cancel;
+    in property <string> code-state: "empty";
+    in property <string> fingerprint-short;
+    in property <string> fingerprint-groups;
+    in-out property <string> verify-state: "checking";
+    in property <string> verify-message;
+    callback code-edited(string);
+    callback test-connection(string, string);
+    callback save-setup(string, string);
+    callback cancel-setup();
+
+    in property <string> server-label;
+    in property <string> login-error;
+    in property <bool> login-busy;
+    callback login(string);
+    callback open-setup();
+
+    // Main
+    in property <[ChatRow]> chats;
+    in property <[ChatRow]> pinned;
+    in property <string> selected-chat;
+    in property <Conversation> conversation;
+    in property <[TimelineRow]> timeline;
+    in property <string> status;
+    // "online" | "connecting" | "offline"
+    in property <string> connection: "connecting";
+    in property <string> notice;
+    in property <int> max-message-bytes: 16384;
+    in property <string> server-address;
+    in property <string> server-fingerprint;
+    in property <string> server-fingerprint-short;
+    // First run: show the welcome card in Note to Self.
+    in property <bool> welcome;
+    callback open-chat(string);
+    callback send(string) -> bool;
+    callback logout();
+    callback search(string);
+    callback toggle-pin(string);
+    callback set-font(string);
+    callback set-appearance(string);
+    callback set-reduce-motion(bool);
+    callback dismiss-welcome();
+
+    // The agent editor (fields are validated by the app as they change).
+    in property <string> editor-name-error;
+    in property <string> editor-label-error;
+    in property <string> editor-about-error;
+    in property <bool> editor-valid;
+    in property <string> editor-initials;
+    in property <string> editor-picture-name;
+    callback editor-validate(string, string, string);
+    callback choose-picture(string);
+    callback remove-picture(string);
+    callback create-agent(string, string, string);
+    callback update-agent(string, string, string, string);
+
+    // Agents: model, runtime, links, the kill switch; quizzes; the security log.
+    in property <bool> agents-paused;
+    in property <string> model-error;
+    in property <[AuditRow]> audit;
+    in property <bool> audit-has-more;
+    callback set-agents-paused(bool);
+    callback save-model(string, [string]);
+    callback issue-token(string);
+    callback revoke-token(string);
+    callback set-agent-link(string, string, bool);
+    callback quiz-pick(string, int, int);
+    callback quiz-submit(string);
+    callback quiz-retry(string);
+    callback load-audit(bool);
+
+    in property <string> app-version;
+
+    // Jobs, and the dialog for a new one.
+    in-out property <bool> job-dialog-open;
+    in property <string> job-error;
+    callback create-job(string, string, string, int, string, int);
+    callback approve-job(string);
+    callback cancel-job(string);
+    callback run-job(string);
+
+    // Plugins, and the preview shown before installing one.
+    in property <[PluginRow]> plugins;
+    in property <PluginPreview> plugin-preview;
+    callback plugins-opened();
+    callback install-plugin();
+    callback confirm-plugin-install();
+    callback cancel-plugin-install();
+    callback grant-plugin(string, string, [string]);
+    callback revoke-plugin(string, string);
+    callback toggle-plugin-host(string, string, string);
+    callback remove-plugin(string);
+
+    // A new runtime token, shown once. The app clears these when it closes.
+    in property <bool> token-open;
+    in property <string> token-agent;
+    in property <string> token-secret;
+    in property <string> token-code;
+    callback close-token();
+
+    // The effective theme (after the user's appearance choice), so the app can
+    // color code and math to match.
+    out property <bool> dark-mode: Theme.dark;
+    callback theme-changed(bool);
+    changed dark-mode => {
+        root.theme-changed(self.dark-mode);
+    }
+
+    // Show an onboarding step: "welcome" | "connect" | "login" (and the steps between).
+    public function show-step(step: string) {
+        onboarding.step = step;
+    }
+    public function clear-password() {
+        onboarding.clear-password();
+    }
+    public function focus-composer() {
+        main-page.focus-composer();
+    }
+    public function reset-main() {
+        main-page.reset();
+    }
+    public function open-settings() {
+        main-page.settings-open = true;
+    }
+    public function new-agent() {
+        main-page.new-agent();
+    }
+    public function edit-agent() {
+        main-page.edit-agent();
+    }
+    public function open-plugins() {
+        main-page.open-plugins();
+    }
+
+    if root.page == "loading": VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            Wordmark {
+                size: 34px;
+            }
+        }
+    }
+    // Each page is placed explicitly: the window's size limits come from its own
+    // min-width/min-height, not from the pages (whose column choice depends on the
+    // window's width).
+    onboarding := Onboarding {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        visible: root.page == "setup" || root.page == "login";
+        address <=> root.setup-address;
+        fingerprint <=> root.setup-fingerprint;
+        code <=> root.setup-code;
+        manual <=> root.setup-manual;
+        verify-state <=> root.verify-state;
+        code-state: root.code-state;
+        fingerprint-short: root.fingerprint-short;
+        fingerprint-groups: root.fingerprint-groups;
+        setup-error: root.setup-error;
+        can-cancel: root.setup-can-cancel;
+        verify-message: root.verify-message;
+        server-label: root.server-label;
+        login-error: root.login-error;
+        login-busy: root.login-busy;
+        code-edited(t) => {
+            root.code-edited(t);
+        }
+        test-connection(a, f) => {
+            root.test-connection(a, f);
+        }
+        save(a, f) => {
+            root.save-setup(a, f);
+        }
+        cancel => {
+            root.cancel-setup();
+        }
+        login(p) => {
+            root.login(p);
+        }
+        open-setup => {
+            root.open-setup();
+        }
+    }
+    main-page := MainPage {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        visible: root.page == "main";
+        chats: root.chats;
+        pinned: root.pinned;
+        selected-chat: root.selected-chat;
+        conversation: root.conversation;
+        timeline: root.timeline;
+        status: root.status;
+        connection: root.connection;
+        notice: root.notice;
+        server-address: root.server-address;
+        server-fingerprint: root.server-fingerprint;
+        server-fingerprint-short: root.server-fingerprint-short;
+        welcome: root.welcome;
+        dismiss-welcome => {
+            root.dismiss-welcome();
+        }
+        editor-name-error: root.editor-name-error;
+        editor-label-error: root.editor-label-error;
+        editor-about-error: root.editor-about-error;
+        editor-valid: root.editor-valid;
+        editor-initials: root.editor-initials;
+        editor-picture-name: root.editor-picture-name;
+        editor-validate(n, l, a) => {
+            root.editor-validate(n, l, a);
+        }
+        choose-picture(id) => {
+            root.choose-picture(id);
+        }
+        remove-picture(id) => {
+            root.remove-picture(id);
+        }
+        create-agent(n, l, a) => {
+            root.create-agent(n, l, a);
+        }
+        update-agent(id, n, l, a) => {
+            root.update-agent(id, n, l, a);
+        }
+        agents-paused: root.agents-paused;
+        model-error: root.model-error;
+        audit: root.audit;
+        audit-has-more: root.audit-has-more;
+        set-agents-paused(on) => {
+            root.set-agents-paused(on);
+        }
+        save-model(id, f) => {
+            root.save-model(id, f);
+        }
+        issue-token(id) => {
+            root.issue-token(id);
+        }
+        revoke-token(id) => {
+            root.revoke-token(id);
+        }
+        set-agent-link(a, b, on) => {
+            root.set-agent-link(a, b, on);
+        }
+        quiz-pick(m, q, c) => {
+            root.quiz-pick(m, q, c);
+        }
+        quiz-submit(m) => {
+            root.quiz-submit(m);
+        }
+        quiz-retry(m) => {
+            root.quiz-retry(m);
+        }
+        load-audit(older) => {
+            root.load-audit(older);
+        }
+        plugins: root.plugins;
+        plugins-opened => {
+            root.plugins-opened();
+        }
+        new-job => {
+            root.job-dialog-open = true;
+        }
+        app-version: root.app-version;
+        approve-job(id) => {
+            root.approve-job(id);
+        }
+        cancel-job(id) => {
+            root.cancel-job(id);
+        }
+        run-job(id) => {
+            root.run-job(id);
+        }
+        install-plugin => {
+            root.install-plugin();
+        }
+        grant-plugin(a, p, hosts) => {
+            root.grant-plugin(a, p, hosts);
+        }
+        revoke-plugin(a, p) => {
+            root.revoke-plugin(a, p);
+        }
+        toggle-plugin-host(a, p, h) => {
+            root.toggle-plugin-host(a, p, h);
+        }
+        remove-plugin(p) => {
+            root.remove-plugin(p);
+        }
+        open-chat(id) => {
+            root.open-chat(id);
+        }
+        send(text) => {
+            return root.send(text);
+        }
+        logout => {
+            root.logout();
+        }
+        search(t) => {
+            root.search(t);
+        }
+        toggle-pin(id) => {
+            root.toggle-pin(id);
+        }
+        set-font(f) => {
+            root.set-font(f);
+        }
+        set-appearance(a) => {
+            root.set-appearance(a);
+        }
+        set-reduce-motion(on) => {
+            root.set-reduce-motion(on);
+        }
+    }
+
+    if root.job-dialog-open && root.page == "main" && root.conversation.agent: NewJobDialog {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        agent: root.conversation.people[0].name;
+        error: root.job-error;
+        create(title, prompt, start, time, repeat) => {
+            root.create-job(root.conversation.agent-id, title, prompt, start, time, repeat);
+        }
+        cancel => {
+            root.job-dialog-open = false;
+        }
+    }
+
+    if root.plugin-preview.open && root.page == "main": PluginPreviewDialog {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        preview: root.plugin-preview;
+        confirm => {
+            root.confirm-plugin-install();
+        }
+        cancel => {
+            root.cancel-plugin-install();
+        }
+    }
+
+    if root.token-open && root.page == "main": TokenDialog {
+        x: 0;
+        y: 0;
+        width: 100%;
+        height: 100%;
+        agent: root.token-agent;
+        token: root.token-secret;
+        code: root.token-code;
+        copy(t) => {
+            root.copy-text(t);
+        }
+        done => {
+            root.close-token();
+        }
+    }
+
+    // Copies text to the clipboard through a hidden text field.
+    copier := TextInput {
+        visible: false;
+        width: 0;
+        height: 0;
+    }
+    public function copy-text(t: string) {
+        copier.text = t;
+        copier.select-all();
+        copier.copy();
+        copier.text = "";
+    }
+}

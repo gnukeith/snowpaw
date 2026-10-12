@@ -1,0 +1,315 @@
+// Scheduled jobs: work an agent does on a timetable, in its chat with the user.
+// Agents can only suggest jobs; nothing runs until the user approves it.
+
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { Icon } from "icons.slint";
+import { JobRow } from "types.slint";
+import { Button, IconButton, TextField, Segmented } from "components.slint";
+
+// Three dots that brighten in turn while a job runs.
+component Busy inherits HorizontalLayout {
+    property <float> t: Theme.reduce-motion ? 0 : animation-tick() / 1ms;
+    spacing: 4px;
+    alignment: start;
+    for i in 3: VerticalLayout {
+        alignment: center;
+        Rectangle {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: Theme.accent;
+            opacity: Theme.reduce-motion ? 1 : 0.25 + 0.75 * max(0, sin(root.t * 0.3deg - i * 60deg));
+        }
+    }
+}
+
+// One job, with what can be done to it. `width` must be given (it holds wrapped text).
+export component JobCard inherits Rectangle {
+    in property <JobRow> job;
+    in property <string> agent;
+    callback approve(string);
+    callback cancel(string);
+    callback run-now(string);
+    property <bool> open: root.job.state == "proposed" || root.job.state == "active";
+    property <length> inner: root.width - 32px;
+    border-radius: Metrics.radius-card;
+    background: root.job.state == "proposed" ? Theme.ground : Theme.raised;
+    border-width: root.job.state == "proposed" ? 1px : 0px;
+    border-color: Theme.strong;
+    opacity: root.open ? 1 : 0.75;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 10px;
+            VerticalLayout {
+                alignment: start;
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 10px;
+                    background: root.open ? Theme.accent-soft : Theme.hover;
+                    Icon {
+                        x: 7px;
+                        y: 7px;
+                        size: 18px;
+                        name: root.job.state == "failed" ? "alert" : (root.job.state == "done" ? "check" : "clock");
+                        color: root.job.state == "failed" ? Theme.danger : (root.open ? Theme.accent : Theme.secondary);
+                    }
+                }
+            }
+            VerticalLayout {
+                spacing: 1px;
+                Text {
+                    text: root.job.state == "proposed" ? root.agent + " suggests a job"
+                        : root.job.state == "done" ? "Finished"
+                        : root.job.state == "failed" ? "Failed"
+                        : root.job.state == "cancelled" ? "Cancelled"
+                        : root.job.running ? "Running now" : "Scheduled";
+                    color: root.job.state == "failed" ? Theme.danger : (root.open ? Theme.accent : Theme.secondary);
+                    font-size: TextSize.micro;
+                    font-weight: 700;
+                    letter-spacing: 0.4px;
+                }
+                Text {
+                    text: root.job.title;
+                    width: root.inner - 42px;
+                    color: Theme.text;
+                    font-size: TextSize.body;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.job.schedule;
+                    color: Theme.secondary;
+                    font-size: TextSize.caption;
+                }
+            }
+        }
+        if root.job.state == "proposed": Text {
+            text: root.job.prompt;
+            width: root.inner;
+            color: Theme.text;
+            font-size: TextSize.small;
+            wrap: word-wrap;
+        }
+        if root.job.running: HorizontalLayout {
+            spacing: 10px;
+            Busy { }
+            Text {
+                text: root.job.progress != "" ? root.job.progress : "Working…";
+                width: root.inner - 40px;
+                color: Theme.text;
+                font-size: TextSize.small;
+                wrap: word-wrap;
+            }
+        }
+        if root.job.state == "active" && !root.job.running && root.job.next-run != "": Text {
+            text: root.job.next-run;
+            color: Theme.secondary;
+            font-size: TextSize.caption;
+        }
+        if root.job.last != "": Text {
+            text: root.job.last;
+            width: root.inner;
+            color: Theme.secondary;
+            font-size: TextSize.caption;
+            wrap: word-wrap;
+        }
+        if root.job.state == "proposed": Text {
+            text: "Nothing runs until you approve it.";
+            color: Theme.secondary;
+            font-size: TextSize.caption;
+        }
+        if root.open: HorizontalLayout {
+            alignment: start;
+            spacing: 8px;
+            padding-top: 4px;
+            if root.job.state == "proposed": Button {
+                text: "Approve";
+                clicked => {
+                    root.approve(root.job.id);
+                }
+            }
+            if root.job.state == "proposed": Button {
+                kind: "secondary";
+                text: "Decline";
+                clicked => {
+                    root.cancel(root.job.id);
+                }
+            }
+            if root.job.state == "active" && !root.job.running: Button {
+                kind: "secondary";
+                icon: "play";
+                text: "Run now";
+                clicked => {
+                    root.run-now(root.job.id);
+                }
+            }
+            if root.job.state == "active": Button {
+                kind: "quiet";
+                text: root.job.running ? "Stop" : "Cancel job";
+                clicked => {
+                    root.cancel(root.job.id);
+                }
+            }
+        }
+    }
+}
+
+// A new job for an agent: what, when, and how often.
+export component NewJobDialog inherits Rectangle {
+    in property <string> agent;
+    in property <string> error;
+    in-out property <string> title;
+    in-out property <string> prompt;
+    in-out property <string> time: "08:00";
+    in-out property <int> start-day: 2;
+    in-out property <int> repeat: 2;
+    callback create(string, string, int, string, int);
+    callback cancel();
+    property <length> card: min(540px, root.width - 48px);
+    property <length> inner: root.card - 48px;
+    background: #00000099;
+
+    TouchArea { }
+
+    VerticalLayout {
+        alignment: center;
+        padding: 24px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: root.card;
+                border-radius: 22px;
+                background: Theme.menu;
+                border-width: 1px;
+                border-color: Theme.strong;
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 14px;
+                    Text {
+                        text: "New job for " + root.agent;
+                        width: root.inner;
+                        color: Theme.text;
+                        font-size: TextSize.title;
+                        font-weight: 700;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.agent + " will do this on its own at the times you choose, and post the result in your chat.";
+                        width: root.inner;
+                        color: Theme.secondary;
+                        font-size: TextSize.small;
+                        wrap: word-wrap;
+                    }
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "Name";
+                            color: Theme.text;
+                            font-size: TextSize.small;
+                            font-weight: 700;
+                        }
+                        TextField {
+                            text <=> root.title;
+                            label: "Job name";
+                            placeholder: "e.g. Morning news";
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "What should " + root.agent + " do?";
+                            color: Theme.text;
+                            font-size: TextSize.small;
+                            font-weight: 700;
+                        }
+                        TextField {
+                            text <=> root.prompt;
+                            label: "What the agent should do";
+                            placeholder: "e.g. Summarize the news about local weather";
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "Start";
+                            color: Theme.text;
+                            font-size: TextSize.small;
+                            font-weight: 700;
+                        }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: start;
+                            Segmented {
+                                items: ["Now", "Today", "Tomorrow"];
+                                current: root.start-day;
+                                picked(i) => {
+                                    root.start-day = i;
+                                }
+                            }
+                            if root.start-day > 0: Text {
+                                text: "at";
+                                color: Theme.secondary;
+                                font-size: TextSize.small;
+                                vertical-alignment: center;
+                            }
+                            if root.start-day > 0: TextField {
+                                width: 96px;
+                                text <=> root.time;
+                                label: "Time, as hours and minutes";
+                                placeholder: "08:00";
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "Repeat";
+                            color: Theme.text;
+                            font-size: TextSize.small;
+                            font-weight: 700;
+                        }
+                        HorizontalLayout {
+                            alignment: start;
+                            Segmented {
+                                items: ["Once", "Every hour", "Every day", "Every week"];
+                                current: root.repeat;
+                                picked(i) => {
+                                    root.repeat = i;
+                                }
+                            }
+                        }
+                    }
+                    if root.error != "": Text {
+                        text: root.error;
+                        width: root.inner;
+                        color: Theme.danger;
+                        font-size: TextSize.small;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: end;
+                        spacing: 10px;
+                        Button {
+                            kind: "secondary";
+                            text: "Cancel";
+                            clicked => {
+                                root.cancel();
+                            }
+                        }
+                        Button {
+                            text: "Create job";
+                            enabled: root.title != "" && root.prompt != "";
+                            clicked => {
+                                root.create(root.title, root.prompt, root.start-day, root.time, root.repeat);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

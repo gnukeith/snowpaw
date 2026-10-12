@@ -1,0 +1,30 @@
+# snowpaw sync server, rootless Podman (Quadlet). Copy this directory's files to
+# ~/.config/containers/systemd/ and see docs/deployment-podman.md.
+[Unit]
+Description=snowpaw sync server
+After=network-online.target
+
+[Container]
+Image=localhost/snowpaw-server:latest
+ContainerName=snowpaw-server
+# Listens on the front network for you (published only on this machine's loopback)
+# and, separately, on the agents' network for runtimes only (server.agent_listen).
+Network=snowpaw-front.network:ip=10.89.43.2
+Network=snowpaw-agents.network:ip=10.89.42.2
+PublishPort=127.0.0.1:7443:7443
+Volume=snowpaw-data.volume:/var/lib/snowpaw:Z
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+User=65532
+Group=65532
+# The secrets key can live outside the data volume (see [secrets] in server.toml):
+# Secret=snowpaw-secrets-key,target=/run/secrets/secrets.key,uid=65532,mode=0400
+PodmanArgs=--memory=1g --pids-limit=256
+
+[Service]
+Restart=on-failure
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

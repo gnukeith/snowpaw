@@ -1,0 +1,33 @@
+[package]
+name = "snowpaw-render"
+description = "snowpaw render worker: highlights code and typesets math from untrusted messages, in a sandboxed process"
+license = "AGPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "snowpaw-render"
+path = "src/main.rs"
+
+[dependencies]
+snowpaw-proto.workspace = true
+giallo.workspace = true
+typst.workspace = true
+typst-render.workspace = true
+typst-layout.workspace = true
+typst-assets.workspace = true
+mitex.workspace = true
+image.workspace = true
+rustix.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock.workspace = true
+
+[dev-dependencies]
+mitex-spec-gen.workspace = true
+
+[lints]
+workspace = true

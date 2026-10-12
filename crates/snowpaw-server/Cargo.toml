@@ -1,0 +1,44 @@
+[package]
+name = "snowpaw-server"
+description = "snowpaw sync server: the single source of truth for chats, agents, and jobs"
+license = "AGPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+snowpaw-proto.workspace = true
+axum.workspace = true
+# The client side calls model APIs (OpenAI-compatible) on agents' behalf.
+hyper = { workspace = true, features = ["client"] }
+hyper-util.workspace = true
+tower.workspace = true
+tokio.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+rcgen.workspace = true
+aws-lc-rs.workspace = true
+webpki-roots.workspace = true
+rusqlite.workspace = true
+argon2.workspace = true
+sha2.workspace = true
+getrandom.workspace = true
+zeroize.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rpassword.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+# TLS 1.2 is enabled for tests only, to prove the server refuses it.
+rustls = { workspace = true, features = ["tls12"] }
+
+[lints]
+workspace = true

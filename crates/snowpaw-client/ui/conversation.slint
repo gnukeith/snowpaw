@@ -1,0 +1,1033 @@
+// The middle column: header, the timeline (messages, time separators, agent
+// activity) and the composer. Nothing floats over the scrolling timeline.
+
+import { ListView } from "std-widgets.slint";
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { Icon, PawMark } from "icons.slint";
+import { Conversation, MessageRow, MsgBlock, Quiz, QuizQuestion, TimelineRow } from "types.slint";
+import { Pressable, IconButton, Button, Avatar, ChatAvatar, Divider, Segmented } from "components.slint";
+import { JobCard } from "jobs.slint";
+
+component BlockView inherits VerticalLayout {
+    in property <MsgBlock> block;
+    in property <length> avail;
+
+    if root.block.kind == "text": StyledText {
+        text: root.block.styled;
+        default-color: Theme.text;
+        default-font-size: TextSize.body;
+        link-color: Theme.accent;
+    }
+    if root.block.kind == "h1" || root.block.kind == "h2" || root.block.kind == "h3": StyledText {
+        text: root.block.styled;
+        default-color: Theme.text;
+        default-font-size: root.block.kind == "h1" ? 20px : (root.block.kind == "h2" ? TextSize.heading : TextSize.body);
+        link-color: Theme.accent;
+    }
+    if root.block.kind == "quote": HorizontalLayout {
+        spacing: 10px;
+        Rectangle {
+            width: 3px;
+            border-radius: 1.5px;
+            background: Theme.strong;
+        }
+        StyledText {
+            text: root.block.styled;
+            default-color: Theme.text;
+            default-font-size: TextSize.body;
+            link-color: Theme.accent;
+            horizontal-stretch: 1;
+        }
+    }
+    if root.block.kind == "code": Rectangle {
+        background: Theme.code-bg;
+        border-radius: Metrics.radius-control;
+        border-width: 1px;
+        border-color: Theme.line;
+        VerticalLayout {
+            padding: 12px;
+            StyledText {
+                text: root.block.styled;
+                default-color: Theme.code-fg;
+                default-font-size: TextSize.caption;
+                default-font-family: Theme.mono;
+                link-color: Theme.code-fg;
+            }
+        }
+    }
+    if root.block.kind == "image" || root.block.kind == "display": HorizontalLayout {
+        alignment: root.block.kind == "display" ? center : start;
+        Image {
+            source: root.block.image;
+            width: min(root.block.image-width, root.avail);
+            height: self.width * (root.block.image-height / root.block.image-width);
+            image-fit: contain;
+        }
+    }
+    if root.block.kind == "rule": Rectangle {
+        height: 1px;
+        background: Theme.line;
+    }
+}
+
+// One answer choice. Before grading it is a radio choice; after grading the right
+// answer is marked, and a wrong pick is shown as wrong.
+component Choice inherits Pressable {
+    in property <string> text;
+    in property <bool> picked;
+    // -1 not graded; otherwise this choice is the right answer (1) or not (0).
+    in property <int> right: -1;
+    property <bool> graded: root.right >= 0;
+    property <bool> wrong-pick: root.graded && root.picked && root.right == 0;
+    label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.picked;
+    min-height: 42px;
+    border-radius: 12px;
+    background: root.graded && root.right == 1 ? Theme.accent-soft
+        : root.wrong-pick ? Theme.danger-soft
+        : root.picked ? Theme.accent-soft
+        : root.hovered && root.enabled ? Theme.hover : transparent;
+    border-width: root.focused ? 2px : 1px;
+    border-color: root.focused ? Theme.accent
+        : root.graded && root.right == 1 ? Theme.accent
+        : root.wrong-pick ? Theme.danger
+        : root.picked ? Theme.accent : Theme.line;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 9px;
+        padding-bottom: 9px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            if !root.graded: Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border-width: 2px;
+                border-color: root.picked ? Theme.accent : Theme.strong;
+                if root.picked: Rectangle {
+                    x: 4px;
+                    y: 4px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    background: Theme.accent;
+                }
+            }
+            if root.graded: Icon {
+                size: 18px;
+                weight: 2.2px;
+                name: root.right == 1 ? "check" : (root.picked ? "close" : "");
+                color: root.right == 1 ? Theme.accent : Theme.danger;
+            }
+        }
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: TextSize.body;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// A quiz from an agent: answer and check, or practise with flashcards. Grading
+// comes from the server; the agent sees which answers were right.
+component QuizCard inherits Rectangle {
+    in property <Quiz> quiz;
+    callback pick(string, int, int);
+    callback submit(string);
+    callback retry(string);
+    property <int> mode;
+    property <int> card;
+    property <bool> revealed;
+    border-radius: Metrics.radius-bubble;
+    background: Theme.bubble-in;
+    border-width: 1px;
+    border-color: Theme.line;
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 16px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 12px;
+                    background: Theme.accent-soft;
+                    Icon {
+                        x: 8px;
+                        y: 8px;
+                        name: "quiz";
+                        color: Theme.accent;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.quiz.title != "" ? root.quiz.title : "Quiz";
+                    color: Theme.text;
+                    font-size: TextSize.body;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.quiz.total == 1 ? "1 question" : root.quiz.total + " questions";
+                    color: Theme.secondary;
+                    font-size: TextSize.caption;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Segmented {
+                    items: ["Quiz", "Flashcards"];
+                    current: root.mode;
+                    picked(i) => {
+                        root.mode = i;
+                        root.card = 0;
+                        root.revealed = false;
+                    }
+                }
+            }
+        }
+
+        if root.mode == 0: VerticalLayout {
+            spacing: 18px;
+            for q[qi] in root.quiz.questions: VerticalLayout {
+                property <bool> show-hint;
+                spacing: 8px;
+                Text {
+                    text: (qi + 1) + ". " + q.prompt;
+                    color: Theme.text;
+                    font-size: TextSize.body;
+                    font-weight: 600;
+                    wrap: word-wrap;
+                }
+                for c[ci] in q.choices: Choice {
+                    text: c;
+                    picked: q.picked == ci;
+                    right: q.graded < 0 ? -1 : (ci == q.answer ? 1 : 0);
+                    enabled: root.quiz.can-answer && !root.quiz.submitted;
+                    clicked => {
+                        root.pick(root.quiz.message-id, qi, ci);
+                    }
+                }
+                if root.quiz.submitted && q.explanation != "": Text {
+                    text: q.explanation;
+                    color: Theme.secondary;
+                    font-size: TextSize.small;
+                    wrap: word-wrap;
+                }
+                if !root.quiz.submitted && q.hint != "" && !show-hint: Pressable {
+                    label: "Show a hint";
+                    height: 32px;
+                    width: 110px;
+                    border-radius: 16px;
+                    border-width: self.focused ? 2px : 0px;
+                    border-color: Theme.accent;
+                    clicked => {
+                        show-hint = true;
+                    }
+                    Text {
+                        text: "Show a hint";
+                        color: Theme.accent;
+                        font-size: TextSize.caption;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+                if !root.quiz.submitted && show-hint: Text {
+                    text: "Hint: " + q.hint;
+                    color: Theme.secondary;
+                    font-size: TextSize.small;
+                    wrap: word-wrap;
+                }
+            }
+            if root.quiz.can-answer && !root.quiz.submitted: HorizontalLayout {
+                spacing: 12px;
+                Button {
+                    text: "Check answers";
+                    enabled: root.quiz.answered > 0;
+                    clicked => {
+                        root.submit(root.quiz.message-id);
+                    }
+                }
+                Text {
+                    text: root.quiz.answered + " of " + root.quiz.total + " answered";
+                    color: Theme.secondary;
+                    font-size: TextSize.caption;
+                    vertical-alignment: center;
+                }
+            }
+            if root.quiz.submitted: HorizontalLayout {
+                spacing: 12px;
+                Rectangle {
+                    height: 36px;
+                    border-radius: 18px;
+                    background: root.quiz.right == root.quiz.total ? Theme.accent-fill : Theme.raised;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        Text {
+                            text: root.quiz.right + " of " + root.quiz.total + " right";
+                            color: root.quiz.right == root.quiz.total ? Theme.on-accent : Theme.text;
+                            font-size: TextSize.small;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                if root.quiz.can-answer: Button {
+                    kind: "secondary";
+                    text: "Try again";
+                    clicked => {
+                        root.retry(root.quiz.message-id);
+                    }
+                }
+            }
+            if !root.quiz.can-answer && !root.quiz.submitted: Text {
+                text: "Only the person it was sent to can answer this quiz.";
+                color: Theme.secondary;
+                font-size: TextSize.caption;
+                wrap: word-wrap;
+            }
+        }
+
+        if root.mode == 1 && root.quiz.total > 0: VerticalLayout {
+            spacing: 12px;
+            Rectangle {
+                border-radius: Metrics.radius-card;
+                background: Theme.ground;
+                border-width: 1px;
+                border-color: Theme.line;
+                min-height: 170px;
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+                    alignment: center;
+                    Text {
+                        text: "Card " + (root.card + 1) + " of " + root.quiz.total;
+                        color: Theme.secondary;
+                        font-size: TextSize.micro;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.quiz.questions[root.card].prompt;
+                        color: Theme.text;
+                        font-size: TextSize.heading;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    if root.revealed: Text {
+                        text: root.quiz.questions[root.card].choices[root.quiz.questions[root.card].answer];
+                        color: Theme.accent;
+                        font-size: TextSize.body;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    if root.revealed && root.quiz.questions[root.card].explanation != "": Text {
+                        text: root.quiz.questions[root.card].explanation;
+                        color: Theme.secondary;
+                        font-size: TextSize.small;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    if !root.revealed: HorizontalLayout {
+                        alignment: center;
+                        Button {
+                            kind: "secondary";
+                            text: "Show answer";
+                            clicked => {
+                                root.revealed = true;
+                            }
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 12px;
+                IconButton {
+                    icon: "chevron-left";
+                    label: "Previous card";
+                    enabled: root.card > 0;
+                    clicked => {
+                        root.card -= 1;
+                        root.revealed = false;
+                    }
+                }
+                IconButton {
+                    icon: "chevron-right";
+                    label: "Next card";
+                    enabled: root.card < root.quiz.total - 1;
+                    clicked => {
+                        root.card += 1;
+                        root.revealed = false;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Bubble inherits VerticalLayout {
+    in property <MessageRow> msg;
+    in property <length> avail;
+    callback quiz-pick(string, int, int);
+    callback quiz-submit(string);
+    callback quiz-retry(string);
+    property <length> bubble-max: min(root.avail * 0.8, 640px);
+    padding-top: root.msg.group-start ? 12px : 2px;
+    padding-bottom: 2px;
+    spacing: 6px;
+
+    if root.msg.has-sender: HorizontalLayout {
+        alignment: start;
+        spacing: 8px;
+        padding-left: 4px;
+        Avatar {
+            person: root.msg.sender;
+            size: 22px;
+            surface: Theme.ground;
+        }
+        Text {
+            text: root.msg.sender.name;
+            color: Theme.secondary;
+            font-size: TextSize.caption;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+    if root.msg.quiz.has: HorizontalLayout {
+        alignment: root.msg.outgoing ? end : start;
+        QuizCard {
+            quiz: root.msg.quiz;
+            preferred-width: min(root.avail * 0.9, 600px);
+            max-width: min(root.avail * 0.9, 600px);
+            horizontal-stretch: 1;
+            pick(m, q, c) => {
+                root.quiz-pick(m, q, c);
+            }
+            submit(m) => {
+                root.quiz-submit(m);
+            }
+            retry(m) => {
+                root.quiz-retry(m);
+            }
+        }
+    }
+    if !root.msg.quiz.has: HorizontalLayout {
+        alignment: root.msg.outgoing ? end : start;
+        Rectangle {
+            max-width: root.bubble-max;
+            background: root.msg.outgoing ? Theme.bubble-out : Theme.bubble-in;
+            border-radius: Metrics.radius-bubble;
+            opacity: root.msg.pending ? 0.6 : 1.0;
+            VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 10px;
+                padding-bottom: 8px;
+                spacing: 8px;
+                for b in root.msg.blocks: BlockView {
+                    block: b;
+                    avail: root.bubble-max - 32px;
+                }
+                Text {
+                    text: root.msg.pending ? "Sending…" : root.msg.time;
+                    color: Theme.secondary;
+                    font-size: TextSize.micro;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+    }
+}
+
+// "6 messages with ◯ Toki and ◯ Chika": agents talked to each other. Opens that chat.
+component ActivityChip inherits Pressable {
+    in property <TimelineRow> entry;
+    height: 36px;
+    border-radius: 18px;
+    background: root.pressed ? Theme.selected : (root.hovered ? Theme.hover : transparent);
+    border-width: root.focused ? 2px : 1px;
+    border-color: root.focused ? Theme.accent : Theme.line;
+    accessible-label: root.entry.label + ". Open the conversation";
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 6px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: "chats";
+                size: 16px;
+                color: Theme.secondary;
+            }
+        }
+        Text {
+            text: root.entry.label;
+            color: Theme.secondary;
+            font-size: TextSize.caption;
+            vertical-alignment: center;
+        }
+        for p[i] in root.entry.people: HorizontalLayout {
+            spacing: 6px;
+            if i > 0: Text {
+                text: i == root.entry.people.length - 1 ? "and" : ",";
+                color: Theme.secondary;
+                font-size: TextSize.caption;
+                vertical-alignment: center;
+            }
+            VerticalLayout {
+                alignment: center;
+                Avatar {
+                    person: p;
+                    size: 20px;
+                    surface: Theme.ground;
+                }
+            }
+            Text {
+                text: p.name;
+                color: Theme.text;
+                font-size: TextSize.caption;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: "chevron-right";
+                size: 14px;
+                color: Theme.secondary;
+            }
+        }
+    }
+}
+
+// One line of advice: an icon, a title and a sentence or two.
+component Tip inherits HorizontalLayout {
+    in property <string> icon;
+    in property <string> title;
+    in property <string> text;
+    spacing: 14px;
+    VerticalLayout {
+        alignment: start;
+        Rectangle {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            background: Theme.accent-soft;
+            Icon {
+                x: 9px;
+                y: 9px;
+                size: 18px;
+                name: root.icon;
+                color: Theme.accent;
+            }
+        }
+    }
+    VerticalLayout {
+        horizontal-stretch: 1;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: TextSize.body;
+            font-weight: 700;
+        }
+        Text {
+            text: root.text;
+            color: Theme.secondary;
+            font-size: TextSize.small;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// First run: what this place is and what to do next. Shown in Note to Self until
+// dismissed.
+component WelcomeCard inherits Rectangle {
+    callback dismiss();
+    callback add-agent();
+    border-radius: 24px;
+    border-width: 1px;
+    border-color: Theme.strong;
+    background: Theme.ground;
+    VerticalLayout {
+        padding: 22px;
+        spacing: 16px;
+        HorizontalLayout {
+            spacing: 14px;
+            VerticalLayout {
+                alignment: start;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 16px;
+                    background: Theme.accent-fill;
+                    PawMark {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        size: 30px;
+                        color: Theme.on-accent;
+                    }
+                }
+            }
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                Text {
+                    text: "Welcome to snowpaw";
+                    color: Theme.text;
+                    font-size: 19px;
+                    font-weight: 700;
+                }
+                Text {
+                    text: "This is Note to Self. Only you can see it, so it’s a good place for notes and links. Try writing one below.";
+                    color: Theme.secondary;
+                    font-size: TextSize.small;
+                    wrap: word-wrap;
+                }
+            }
+        }
+        Tip {
+            icon: "person";
+            title: "Agents show up on the left";
+            text: "Each one gets a name, a role and a picture. Conversations between agents appear there too, and you can read along.";
+        }
+        Tip {
+            icon: "pin";
+            title: "Pin your favourites";
+            text: "Open an agent’s details and choose Pin to top. Up to three fit at the top of the list.";
+        }
+        Tip {
+            icon: "shield";
+            title: "Your server, verified";
+            text: "The menu at the bottom left shows which server you’re connected to and its pinned certificate.";
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 10px;
+            Button {
+                icon: "plus";
+                text: "Add your first agent";
+                clicked => {
+                    root.add-agent();
+                }
+            }
+            Button {
+                kind: "secondary";
+                text: "Got it";
+                clicked => {
+                    root.dismiss();
+                }
+            }
+        }
+    }
+}
+
+component TimelineItem inherits HorizontalLayout {
+    in property <TimelineRow> entry;
+    in property <length> avail;
+    callback open-chat(string);
+    callback dismiss-welcome();
+    callback add-agent();
+    callback quiz-pick(string, int, int);
+    callback quiz-submit(string);
+    callback quiz-retry(string);
+    alignment: center;
+
+    VerticalLayout {
+        width: root.avail;
+        if root.entry.kind == "welcome": VerticalLayout {
+            padding-top: 20px;
+            padding-bottom: 8px;
+            WelcomeCard {
+                dismiss => {
+                    root.dismiss-welcome();
+                }
+                add-agent => {
+                    root.add-agent();
+                }
+            }
+        }
+        if root.entry.kind == "separator": Text {
+            text: root.entry.label;
+            color: Theme.secondary;
+            font-size: TextSize.caption;
+            font-weight: 500;
+            horizontal-alignment: center;
+            height: 52px;
+            vertical-alignment: bottom;
+        }
+        if root.entry.kind == "message": Bubble {
+            msg: root.entry.msg;
+            avail: root.avail;
+            quiz-pick(m, q, c) => {
+                root.quiz-pick(m, q, c);
+            }
+            quiz-submit(m) => {
+                root.quiz-submit(m);
+            }
+            quiz-retry(m) => {
+                root.quiz-retry(m);
+            }
+        }
+        if root.entry.kind == "activity": HorizontalLayout {
+            alignment: center;
+            padding-top: 10px;
+            padding-bottom: 4px;
+            ActivityChip {
+                entry: root.entry;
+                clicked => {
+                    root.open-chat(root.entry.target);
+                }
+            }
+        }
+    }
+}
+
+// The message box: grows with its text up to a limit, then scrolls.
+component Composer inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> text <=> input.text;
+    callback submit();
+
+    public function focus-input() {
+        input.focus();
+    }
+
+    property <length> line: TextSize.body * 1.4;
+    min-height: 52px;
+    border-radius: 26px;
+    background: Theme.raised;
+    border-width: input.has-focus ? 2px : 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.line;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 6px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            flick := Flickable {
+                height: min(input.preferred-height, 8 * root.line);
+                content-height: input.preferred-height;
+                interactive: false;
+                if input.text == "" && input.preedit-text == "": Text {
+                    text: root.placeholder;
+                    color: Theme.secondary;
+                    font-size: TextSize.body;
+                    overflow: elide;
+                    width: flick.width;
+                    accessible-role: none;
+                }
+                input := TextInput {
+                    width: flick.width;
+                    single-line: false;
+                    wrap: word-wrap;
+                    color: Theme.text;
+                    font-size: TextSize.body;
+                    selection-background-color: Theme.accent-soft;
+                    selection-foreground-color: Theme.text;
+                    accessible-label: root.placeholder;
+                    // Return sends; Shift+Return adds a line.
+                    key-pressed(e) => {
+                        if (e.text == Key.Return && !e.modifiers.shift) {
+                            root.submit();
+                            return accept;
+                        }
+                        reject
+                    }
+                    // Keep the cursor in view once the text is taller than the box.
+                    cursor-position-changed(pos) => {
+                        if (pos.y + flick.content-y < 0) {
+                            flick.content-y = -pos.y;
+                        } else if (pos.y + root.line + flick.content-y > flick.height) {
+                            flick.content-y = min(0px, flick.height - pos.y - root.line);
+                        }
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: end;
+            IconButton {
+                icon: "arrow-up";
+                label: "Send";
+                filled: true;
+                enabled: input.text != "";
+                clicked => {
+                    root.submit();
+                }
+            }
+        }
+    }
+}
+
+export component ConversationView inherits Rectangle {
+    in property <Conversation> chat;
+    in property <[TimelineRow]> timeline;
+    in property <string> notice;
+    in property <bool> details-open;
+    in property <bool> show-welcome;
+    in-out property <string> draft;
+    callback dismiss-welcome();
+    callback add-agent();
+    callback quiz-pick(string, int, int);
+    callback quiz-submit(string);
+    callback quiz-retry(string);
+    callback set-agent-link(string, string, bool);
+    callback approve-job(string);
+    callback cancel-job(string);
+    callback run-job(string);
+    callback send(string) -> bool;
+    callback open-chat(string);
+    callback toggle-details();
+
+    // The agent in this chat is busy on a job.
+    property <bool> busy: root.chat.agent && root.chat.people[0].working;
+
+    public function focus-composer() {
+        composer.focus-input();
+    }
+
+    function submit() {
+        if (root.draft != "" && root.send(root.draft)) {
+            root.draft = "";
+        }
+    }
+
+    background: Theme.ground;
+
+    VerticalLayout {
+        // Header: who this is with.
+        HorizontalLayout {
+            height: Metrics.header-height;
+            padding-left: 20px;
+            padding-right: 14px;
+            spacing: 12px;
+            VerticalLayout {
+                alignment: center;
+                ChatAvatar {
+                    people: root.chat.people;
+                    size: 36px;
+                    surface: Theme.ground;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.chat.title;
+                    color: Theme.text;
+                    font-size: TextSize.body;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                if root.chat.subtitle != "" && !root.busy: Text {
+                    text: root.chat.agent && root.chat.people[0].label != "" ? root.chat.people[0].label : root.chat.subtitle;
+                    color: Theme.secondary;
+                    font-size: TextSize.caption;
+                    overflow: elide;
+                }
+                if root.busy: HorizontalLayout {
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            background: Theme.accent;
+                        }
+                    }
+                    Text {
+                        text: "Working";
+                        color: Theme.accent;
+                        font-size: TextSize.caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: "panel";
+                    label: root.details-open ? "Hide chat details" : "Show chat details";
+                    outlined: false;
+                    active: root.details-open;
+                    clicked => {
+                        root.toggle-details();
+                    }
+                }
+            }
+        }
+        Divider { }
+
+        list := ListView {
+            vertical-stretch: 1;
+            property <length> lane-width: max(0px, min(Metrics.content-max, list.visible-width - 48px));
+            // Keep the newest message in view when the list grows.
+            changed content-height => {
+                self.content-y = min(0px, self.visible-height - self.content-height);
+            }
+            for row in root.timeline: TimelineItem {
+                entry: row;
+                avail: list.lane-width;
+                open-chat(id) => {
+                    root.open-chat(id);
+                }
+                dismiss-welcome => {
+                    root.dismiss-welcome();
+                }
+                add-agent => {
+                    root.add-agent();
+                }
+                quiz-pick(m, q, c) => {
+                    root.quiz-pick(m, q, c);
+                }
+                quiz-submit(m) => {
+                    root.quiz-submit(m);
+                }
+                quiz-retry(m) => {
+                    root.quiz-retry(m);
+                }
+            }
+        }
+
+        if root.notice != "": HorizontalLayout {
+            alignment: center;
+            padding-top: 8px;
+            Rectangle {
+                background: Theme.warning-bg;
+                border-radius: Metrics.radius-control;
+                max-width: Metrics.content-max;
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    Text {
+                        text: root.notice;
+                        color: Theme.warning-fg;
+                        font-size: TextSize.caption;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Jobs that need the user (a suggestion) or are running now, above the composer.
+        for job in root.chat.jobs: HorizontalLayout {
+            alignment: center;
+            padding-top: (job.state == "proposed" || job.running) ? 10px : 0px;
+            if job.state == "proposed" || job.running: JobCard {
+                width: min(Metrics.content-max, root.width - 48px);
+                job: job;
+                agent: root.chat.people[0].name;
+                approve(id) => {
+                    root.approve-job(id);
+                }
+                cancel(id) => {
+                    root.cancel-job(id);
+                }
+                run-now(id) => {
+                    root.run-job(id);
+                }
+            }
+        }
+
+        // Read-only conversations between agents get a note instead of a composer.
+        if root.chat.read-only: HorizontalLayout {
+            alignment: center;
+            padding: 20px;
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    name: "eye";
+                    size: 18px;
+                    color: Theme.secondary;
+                }
+            }
+            Text {
+                text: root.chat.has-link && !root.chat.link-allowed ? "Paused. These agents can’t message each other until you let them." : "You’re reading along. Only the agents in this chat can write here.";
+                color: Theme.secondary;
+                font-size: TextSize.small;
+                vertical-alignment: center;
+                wrap: word-wrap;
+            }
+            // Step in: stop (or allow again) these two agents talking.
+            if root.chat.has-link: VerticalLayout {
+                alignment: center;
+                Button {
+                    kind: "secondary";
+                    icon: root.chat.link-allowed ? "pause" : "play";
+                    text: root.chat.link-allowed ? "Pause this conversation" : "Let them talk again";
+                    clicked => {
+                        root.set-agent-link(root.chat.link-a, root.chat.link-b, !root.chat.link-allowed);
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            padding-left: 24px;
+            padding-right: 24px;
+            padding-top: 10px;
+            padding-bottom: 20px;
+            visible: !root.chat.read-only;
+            height: root.chat.read-only ? 0px : self.preferred-height;
+            composer := Composer {
+                width: min(Metrics.content-max, root.width - 48px);
+                placeholder: root.chat.placeholder;
+                text <=> root.draft;
+                submit => {
+                    root.submit();
+                }
+            }
+        }
+    }
+}
+
+// Shown when no chat is open.
+export component EmptyConversation inherits Rectangle {
+    background: Theme.ground;
+    VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+        HorizontalLayout {
+            alignment: center;
+            PawMark {
+                size: 48px;
+                color: Theme.strong;
+            }
+        }
+        Text {
+            text: "Pick a chat to start";
+            color: Theme.secondary;
+            font-size: TextSize.body;
+            horizontal-alignment: center;
+        }
+    }
+}

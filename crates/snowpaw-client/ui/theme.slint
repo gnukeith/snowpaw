@@ -1,0 +1,92 @@
+// Design tokens: every color, size and type step the UI uses comes from here.
+// Components never pick their own colors; change the look in this file.
+
+import { Palette } from "std-widgets.slint";
+
+// The bundled default font (SIL OFL 1.1, see fonts/SOURCE.md).
+import "./fonts/Figtree-Regular.ttf";
+import "./fonts/Figtree-Medium.ttf";
+import "./fonts/Figtree-SemiBold.ttf";
+import "./fonts/Figtree-Bold.ttf";
+
+export global Theme {
+    // The user's choice: "system" | "light" | "dark".
+    in-out property <string> appearance: "system";
+    // The user's font: "" = Figtree (bundled), "System" = the OS UI font, else a
+    // family name.
+    in-out property <string> font: "";
+    // Turns off decorative motion (falling snow, walking paws).
+    in-out property <bool> reduce-motion: false;
+    out property <string> font-family: font == "" ? "Figtree" : (font == "System" ? "" : font);
+    out property <bool> dark: appearance == "dark" || (appearance != "light" && Palette.color-scheme == ColorScheme.dark);
+
+    // Surfaces, back to front.
+    out property <color> ground: dark ? #0b0f16 : #ffffff;
+    out property <color> side: dark ? #0f141c : #f4f7fb;
+    out property <color> raised: dark ? #182130 : #edf1f6;
+    out property <color> hover: dark ? #161e2b : #e8edf4;
+    out property <color> selected: dark ? #1e2939 : #e1e8f1;
+    out property <color> menu: dark ? #141b26 : #ffffff;
+    out property <color> screen: dark ? #070a0f : #e6ecf3;
+
+    // Lines.
+    out property <color> line: dark ? #222c3b : #e1e7ef;
+    out property <color> strong: dark ? #34425a : #c9d3e0;
+
+    // Text.
+    out property <color> text: dark ? #e8eef6 : #0b1e3a;
+    out property <color> secondary: dark ? #95a1b3 : #536175;
+
+    // Accent ("ice"). `accent` is for text and small marks, `accent-fill` for
+    // filled controls with `on-accent` text on them.
+    out property <color> accent: dark ? #9cc7f2 : #2b4e80;
+    out property <color> accent-fill: dark ? #c4e4ff : #13294b;
+    out property <color> on-accent: dark ? #0b1e3a : #ffffff;
+    out property <color> accent-soft: dark ? #9cc7f224 : #2b4e801a;
+
+    // Messages: neutral in both directions.
+    out property <color> bubble-in: dark ? #182130 : #edf1f6;
+    out property <color> bubble-out: dark ? #283750 : #dbe8f7;
+
+    // States.
+    out property <color> danger: dark ? #ff9b9b : #b42318;
+    out property <color> warning-bg: dark ? #33291a : #fff4d6;
+    out property <color> warning-fg: dark ? #f3d9a4 : #5c4300;
+
+    // The snowy scene beside onboarding.
+    out property <color> sky: dark ? #0a1730 : #cfe1f5;
+    out property <color> sky-text: dark ? #e8f4ff : #0b1e3a;
+    out property <color> field: dark ? #13294b : #f7fbff;
+    out property <color> field-edge: dark ? #2b4e80 : #ffffff;
+    out property <color> print: dark ? #c4e4ff : #8db4e2;
+    out property <color> flake: dark ? #e8f4ff : #ffffff;
+    out property <color> danger-soft: dark ? #ff9b9b24 : #b423181a;
+
+    // Code blocks follow the GitHub light/dark themes used for highlighting.
+    out property <color> code-bg: dark ? #161b22 : #f6f8fa;
+    out property <color> code-fg: dark ? #e1e4e8 : #24292e;
+    in-out property <string> mono: "Menlo";
+}
+
+export global Metrics {
+    out property <length> sidebar-width: 300px;
+    out property <length> panel-width: 340px;
+    // Below this window width the details panel takes the sidebar's place.
+    out property <length> wide: 1120px;
+    out property <length> content-max: 820px;
+    out property <length> header-height: 64px;
+    out property <length> control: 40px;
+    out property <length> field: 44px;
+    out property <length> radius-bubble: 20px;
+    out property <length> radius-card: 16px;
+    out property <length> radius-control: 12px;
+}
+
+export global TextSize {
+    out property <length> title: 22px;
+    out property <length> heading: 17px;
+    out property <length> body: 15px;
+    out property <length> small: 14px;
+    out property <length> caption: 13px;
+    out property <length> micro: 12px;
+}

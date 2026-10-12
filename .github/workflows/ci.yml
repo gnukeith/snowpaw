@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege: CI only needs to read the code.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Actions are pinned to full commit SHAs, not mutable tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: No unsafe code in our sources
+        # Only Slint's generated UI code (in target/) may allow unsafe; see the lint
+        # note in crates/snowpaw-client/Cargo.toml.
+        run: |
+          if grep -rn --include='*.rs' -E 'allow\(unsafe_code\)|unsafe *\{|unsafe fn|unsafe impl' crates; then
+            echo "unsafe code found in our sources" >&2
+            exit 1
+          fi
+      - name: Desktop client build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev libfontconfig1-dev
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
+  supply-chain:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Install cargo-deny (pinned)
+        run: cargo install --locked cargo-deny@0.20.2
+      # cargo-deny is the single advisory gate: its ignore list (each with a
+      # justification and an expiry plan) lives in deny.toml. cargo-audit reads only
+      # $CARGO_HOME/audit.toml, not deny.toml, so running it too would fail CI on
+      # advisories that were already reviewed and ignored here.
+      - name: cargo deny (advisories, licenses, bans, sources)
+        run: cargo deny --locked check
+
+  plugin-example:
+    # The SDK's macros only expand in plugin crates, so build a real one for wasm32
+    # and check the result: no imports, the API exports, the manifest section.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned toolchain with the wasm32 target
+        run: rustup toolchain install && rustup target add wasm32-unknown-unknown
+      - name: Build the example plugin
+        run: cargo build --locked --release --target wasm32-unknown-unknown --manifest-path examples/plugins/weather/Cargo.toml
+      - name: The module imports nothing and carries its manifest
+        run: |
+          python3 - examples/plugins/weather/target/wasm32-unknown-unknown/release/snowpaw_weather_plugin.wasm <<'PY'
+          import sys
+          data = open(sys.argv[1], "rb").read()
+          assert data[:8] == b"\0asm\x01\0\0\0", "not wasm"
+          def leb(i):
+              r = s = 0
+              while True:
+                  b = data[i]; i += 1; r |= (b & 0x7f) << s; s += 7
+                  if b < 0x80: return r, i
+          i, manifest, imports = 8, False, 0
+          while i < len(data):
+              sid = data[i]; size, i = leb(i + 1); end = i + size
+              if sid == 0:
+                  n, j = leb(i); manifest |= data[j:j + n] == b"snowpaw-manifest"
+              if sid == 2:
+                  imports, _ = leb(i)
+              i = end
+          assert imports == 0, f"{imports} imports"
+          assert manifest, "no snowpaw-manifest section"
+          print("ok")
+          PY

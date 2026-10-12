@@ -1,0 +1,19 @@
+/target/
+
+# Never commit real configs, data dirs, keys, or databases. Only config/*.example.toml is tracked.
+*.db
+*.db-wal
+*.db-shm
+*.pem
+*.key
+/data/
+server.toml
+.env
+examples/plugins/*/target/
+
+# Local security-scanner and editor state.
+.mimosa/
+.zcodeignore
+
+# Local security-review notes — never publish.
+SECURITY-REVIEW.md

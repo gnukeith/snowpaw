@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=snowpaw
+GenericName=Agent chat
+Comment=Private chat with your AI agents
+Exec=snowpaw
+Icon=snowpaw
+Terminal=false
+Categories=Network;Chat;
+StartupWMClass=snowpaw

@@ -1,0 +1,400 @@
+// Reusable building blocks. Each takes its look from the tokens in theme.slint.
+
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { Icon } from "icons.slint";
+import { Person } from "types.slint";
+
+// Base for anything clickable: mouse, keyboard (Tab to focus, Return or Space to
+// activate) and screen readers.
+export component Pressable inherits Rectangle {
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback clicked();
+    out property <bool> hovered: touch.has-hover;
+    out property <bool> pressed: touch.pressed;
+    out property <bool> focused: focus.has-focus;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if (root.enabled) {
+            root.clicked();
+        }
+    }
+
+    focus := FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        key-pressed(e) => {
+            if (e.text == Key.Return || e.text == " ") {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    @children
+}
+
+// A round icon-only button.
+export component IconButton inherits Pressable {
+    in property <string> icon;
+    // Filled with the accent (the send button).
+    in property <bool> filled;
+    // Drawn with a surface and outline; otherwise only on hover.
+    in property <bool> outlined: true;
+    // Shown as switched on (a panel it controls is open).
+    in property <bool> active;
+    in property <length> size: Metrics.control;
+    width: root.size;
+    height: root.size;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: root.size / 2;
+    background: root.filled ? (root.enabled ? Theme.accent-fill : Theme.strong)
+        : root.pressed || root.active ? Theme.selected
+        : root.hovered ? Theme.hover
+        : root.outlined ? Theme.raised : transparent;
+    border-width: root.focused ? 2px : (root.outlined && !root.filled ? 1px : 0px);
+    border-color: root.focused ? Theme.accent : Theme.line;
+
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: root.icon;
+        size: root.size * 0.5;
+        weight: root.filled ? 2.2px : 1.8px;
+        color: root.filled ? Theme.on-accent : (root.enabled ? Theme.text : Theme.secondary);
+    }
+}
+
+// A text button. `kind`: "primary" | "secondary" | "quiet".
+export component Button inherits Pressable {
+    in property <string> text;
+    in property <string> icon;
+    in property <string> kind: "primary";
+    label: root.text;
+    height: Metrics.control;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: self.height / 2;
+    background: root.kind == "primary" ? (root.enabled ? (root.pressed ? Theme.accent : Theme.accent-fill) : Theme.strong)
+        : root.pressed ? Theme.selected
+        : root.hovered ? Theme.hover
+        : transparent;
+    border-width: root.focused ? 2px : (root.kind == "secondary" ? 1px : 0px);
+    border-color: root.focused ? Theme.accent : Theme.strong;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 8px;
+        alignment: center;
+        if root.icon != "": VerticalLayout {
+            alignment: center;
+            Icon {
+                name: root.icon;
+                size: 16px;
+                weight: 2px;
+                color: root.kind == "primary" ? Theme.on-accent : Theme.text;
+            }
+        }
+        Text {
+            text: root.text;
+            font-size: TextSize.small;
+            font-weight: root.kind == "primary" ? 700 : 600;
+            color: root.kind == "primary" ? Theme.on-accent : (root.enabled ? Theme.text : Theme.secondary);
+            vertical-alignment: center;
+        }
+    }
+}
+
+// A single-line text field with its own placeholder.
+export component TextField inherits Rectangle {
+    in property <string> placeholder;
+    in property <bool> password;
+    in property <bool> enabled: true;
+    in property <bool> mono;
+    in property <string> label;
+    in-out property <string> text <=> input.text;
+    out property <bool> has-focus: input.has-focus;
+    callback accepted(string);
+    callback edited(string);
+
+    public function focus-input() {
+        input.focus();
+    }
+
+    public function clear() {
+        input.text = "";
+    }
+
+    height: Metrics.field;
+    // Long text scrolls inside the field instead of widening the layout.
+    min-width: 0px;
+    horizontal-stretch: 1;
+    clip: true;
+    border-radius: Metrics.radius-control;
+    background: Theme.raised;
+    border-width: input.has-focus ? 2px : 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.line;
+
+    if input.text == "" && input.preedit-text == "": Text {
+        x: 15px;
+        width: parent.width - 30px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.secondary;
+        font-size: TextSize.body;
+        vertical-alignment: center;
+        overflow: elide;
+        accessible-role: none;
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        input := TextInput {
+            enabled: root.enabled;
+            single-line: true;
+            input-type: root.password ? InputType.password : InputType.text;
+            color: Theme.text;
+            font-size: TextSize.body;
+            font-family: root.mono ? Theme.mono : "";
+            vertical-alignment: center;
+            selection-background-color: Theme.accent-soft;
+            selection-foreground-color: Theme.text;
+            accessible-label: root.label != "" ? root.label : root.placeholder;
+            accepted => {
+                root.accepted(self.text);
+            }
+            edited => {
+                root.edited(self.text);
+            }
+        }
+    }
+}
+
+// A circle with the person's initials (or the note glyph for Note to Self), plus a
+// small dot while an agent is working.
+export component Avatar inherits Rectangle {
+    in property <Person> person;
+    in property <length> size: 40px;
+    // The surface behind the avatar, used to cut a gap around the working dot.
+    in property <color> surface: Theme.side;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.person.has-avatar ? transparent : (root.person.kind == "note" ? Theme.accent-fill : root.person.tint);
+    accessible-role: none;
+
+    // Pictures arrive already cut to a circle (the renderer can't clip to one).
+    if root.person.has-avatar: Image {
+        width: root.size;
+        height: root.size;
+        source: root.person.avatar;
+        image-fit: cover;
+    }
+    if root.person.kind != "note" && !root.person.has-avatar: Text {
+        text: root.person.initials;
+        color: #ffffff;
+        font-size: root.size * 0.38;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if root.person.kind == "note": Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: "note";
+        size: root.size * 0.52;
+        weight: 2px;
+        color: Theme.on-accent;
+    }
+    if root.person.working: Rectangle {
+        width: max(10px, root.size * 0.3);
+        height: self.width;
+        x: root.size - self.width + 1px;
+        y: root.size - self.height + 1px;
+        border-radius: self.width / 2;
+        background: Theme.accent;
+        border-width: 2px;
+        border-color: root.surface;
+    }
+}
+
+// One avatar, or two offset ones for a conversation between agents.
+export component ChatAvatar inherits Rectangle {
+    in property <[Person]> people;
+    in property <length> size: 44px;
+    in property <color> surface: Theme.side;
+    property <length> small: root.size * 0.68;
+    width: root.size;
+    height: root.size;
+    accessible-role: none;
+
+    if root.people.length < 2: Avatar {
+        person: root.people[0];
+        size: root.size;
+        surface: root.surface;
+    }
+    if root.people.length >= 2: Rectangle {
+        Avatar {
+            x: 0;
+            y: 0;
+            person: root.people[0];
+            size: root.small;
+            surface: root.surface;
+        }
+        // A gap in the surface color between the two circles.
+        Rectangle {
+            x: root.size - root.small - 2px;
+            y: root.size - root.small - 2px;
+            width: root.small + 4px;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: root.surface;
+        }
+        Avatar {
+            x: root.size - root.small;
+            y: root.size - root.small;
+            person: root.people[1];
+            size: root.small;
+            surface: root.surface;
+        }
+    }
+}
+
+export component UnreadBadge inherits Rectangle {
+    in property <int> count;
+    property <string> label: root.count > 99 ? "99+" : root.count;
+    height: 20px;
+    width: max(20px, t.preferred-width + 12px);
+    border-radius: 10px;
+    background: Theme.accent-fill;
+    accessible-role: text;
+    accessible-label: root.count == 1 ? "1 unread message" : root.label + " unread messages";
+    t := Text {
+        text: root.label;
+        color: Theme.on-accent;
+        font-size: TextSize.micro;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+}
+
+// Small uppercase heading above a group of rows.
+export component SectionLabel inherits Text {
+    color: Theme.secondary;
+    font-size: TextSize.micro;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+}
+
+// Pill-shaped choices, one of which is current (tabs, appearance).
+export component Segmented inherits HorizontalLayout {
+    in property <[string]> items;
+    in property <int> current;
+    callback picked(int);
+    spacing: 4px;
+    alignment: center;
+    for item[i] in root.items: Pressable {
+        label: item;
+        height: 36px;
+        border-radius: 18px;
+        background: i == root.current ? Theme.raised : (self.hovered ? Theme.hover : transparent);
+        border-width: self.focused ? 2px : 1px;
+        border-color: self.focused ? Theme.accent : (i == root.current ? Theme.strong : transparent);
+        accessible-role: tab;
+        accessible-item-selected: i == root.current;
+        clicked => {
+            root.picked(i);
+        }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            Text {
+                text: item;
+                font-size: TextSize.small;
+                font-weight: 600;
+                color: i == root.current ? Theme.text : Theme.secondary;
+                vertical-alignment: center;
+                accessible-role: none;
+            }
+        }
+    }
+}
+
+// An on/off switch with its label, as one control.
+export component Switch inherits Pressable {
+    in property <string> text;
+    in property <string> detail;
+    in property <bool> on;
+    label: root.text;
+    accessible-role: switch;
+    accessible-checkable: true;
+    accessible-checked: root.on;
+    height: 60px;
+    border-radius: Metrics.radius-control;
+    background: root.pressed ? Theme.selected : (root.hovered ? Theme.hover : transparent);
+    border-width: root.focused ? 2px : 0px;
+    border-color: Theme.accent;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.text;
+                color: Theme.text;
+                font-size: TextSize.body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.secondary;
+                font-size: TextSize.caption;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 26px;
+                border-radius: 13px;
+                background: root.on ? Theme.accent-fill : Theme.strong;
+                animate background { duration: 160ms; }
+                Rectangle {
+                    x: root.on ? parent.width - self.width - 3px : 3px;
+                    animate x { duration: 160ms; easing: ease-out; }
+                    y: 3px;
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 10px;
+                    background: root.on ? Theme.on-accent : Theme.ground;
+                }
+            }
+        }
+    }
+}
+
+// A thin rule between groups.
+export component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.line;
+}

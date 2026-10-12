@@ -1,0 +1,15 @@
+These files are from the MiTeX project (https://github.com/mitex-rs/mitex),
+packages/mitex/specs, at commit f69eb43b52372e141b35661c049ce522567adbf0
+(the commit the `mitex` 0.2.4 crate was published from).
+
+Copyright the MiTeX contributors. Licensed under the Apache License 2.0
+(see LICENSE in this directory).
+
+Modifications by snowpaw:
+- latex/standard.typ: replaced `#import "@preview/xarrow:0.2.0": xarrow` with a small
+  local `xarrow` definition, because the render worker cannot fetch Typst packages.
+- latex/standard.typ: the KaTeX logo used the `kai` symbol, which Typst 0.15 no longer
+  has; it now renders the text "KaTeX".
+- latex/standard.typ: the \bra/\ket/\braket helpers used `angle.l`/`angle.r`, which
+  Typst renamed to `chevron.l`/`chevron.r`. (Other renamed symbol names in mitex's
+  output are translated by snowpaw's worker; see `RENAMES` in src/math.rs.)

@@ -1,0 +1,462 @@
+// Plugins: tools agents can use. They run in a sandbox with no files, network or
+// clock, except the websites the user allows, per agent.
+
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { Icon } from "icons.slint";
+import { PluginRow, PluginPreview, PluginTool } from "types.slint";
+import { Pressable, IconButton, Button, Avatar, SectionLabel, Switch, Divider } from "components.slint";
+
+// A small square checkbox with its label.
+component Check inherits Pressable {
+    in property <string> text;
+    in property <bool> checked;
+    label: root.text;
+    accessible-role: checkbox;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    height: 36px;
+    border-radius: 8px;
+    background: root.hovered ? Theme.hover : transparent;
+    border-width: root.focused ? 2px : 0px;
+    border-color: Theme.accent;
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 8px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 5px;
+                background: root.checked ? Theme.accent-fill : transparent;
+                border-width: root.checked ? 0px : 2px;
+                border-color: Theme.strong;
+                if root.checked: Icon {
+                    x: 2px;
+                    y: 2px;
+                    size: 14px;
+                    weight: 2.4px;
+                    name: "check";
+                    color: Theme.on-accent;
+                }
+            }
+        }
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: TextSize.small;
+            font-family: Theme.mono;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// What a plugin can do: its tools and the websites it asks for.
+component Capabilities inherits VerticalLayout {
+    in property <[PluginTool]> tools;
+    in property <[string]> hosts;
+    // The width text wraps at (wrapped text in repeated rows needs it given).
+    in property <length> text-width;
+    spacing: 8px;
+    Text {
+        text: root.tools.length == 1 ? "1 tool" : root.tools.length + " tools";
+        color: Theme.text;
+        font-size: TextSize.small;
+        font-weight: 700;
+    }
+    for tool in root.tools: VerticalLayout {
+        spacing: 1px;
+        Text {
+            text: tool.name;
+            color: Theme.text;
+            font-family: Theme.mono;
+            font-size: TextSize.caption;
+        }
+        if tool.description != "": Text {
+            text: tool.description;
+            width: root.text-width;
+            color: Theme.secondary;
+            font-size: TextSize.caption;
+            wrap: word-wrap;
+        }
+    }
+    Text {
+        text: root.hosts.length == 0 ? "No network access." : "Asks to fetch from:";
+        color: Theme.text;
+        font-size: TextSize.small;
+        font-weight: 700;
+    }
+    for host in root.hosts: Text {
+        text: host;
+        color: Theme.text;
+        font-family: Theme.mono;
+        font-size: TextSize.caption;
+    }
+}
+
+component PluginCard inherits Rectangle {
+    in property <PluginRow> plugin;
+    // The card's width, given by the page (so wrapped text is measured right).
+    in property <length> card-width;
+    width: root.card-width;
+    callback grant(string, string, [string]);
+    callback revoke(string, string);
+    callback toggle-host(string, string, string);
+    callback remove(string);
+    border-radius: Metrics.radius-card;
+    background: Theme.raised;
+    VerticalLayout {
+        padding: 18px;
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                alignment: start;
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 12px;
+                    background: Theme.accent-soft;
+                    Icon {
+                        x: 10px;
+                        y: 10px;
+                        name: "blocks";
+                        color: Theme.accent;
+                    }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: root.plugin.name + "  " + root.plugin.version;
+                    color: Theme.text;
+                    font-size: TextSize.body;
+                    font-weight: 700;
+                }
+                Text {
+                    text: "Unsigned · " + root.plugin.hash;
+                    color: Theme.secondary;
+                    font-size: TextSize.caption;
+                }
+                if root.plugin.description != "": Text {
+                    text: root.plugin.description;
+                    width: root.card-width - 36px - 52px - 100px;
+                    color: Theme.text;
+                    font-size: TextSize.small;
+                    wrap: word-wrap;
+                }
+            }
+            VerticalLayout {
+                alignment: start;
+                Button {
+                    kind: "quiet";
+                    text: "Remove";
+                    clicked => {
+                        root.remove(root.plugin.id);
+                    }
+                }
+            }
+        }
+        Capabilities {
+            tools: root.plugin.tools;
+            hosts: root.plugin.hosts;
+            text-width: root.card-width - 36px;
+        }
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+        Text {
+            text: "Which agents can use it";
+            color: Theme.text;
+            font-size: TextSize.small;
+            font-weight: 700;
+        }
+        if root.plugin.agents.length == 0: Text {
+            text: "Add an agent first.";
+            color: Theme.secondary;
+            font-size: TextSize.small;
+        }
+        for a in root.plugin.agents: VerticalLayout {
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    Avatar {
+                        person: a.person;
+                        size: 30px;
+                        surface: Theme.raised;
+                    }
+                }
+                Switch {
+                    horizontal-stretch: 1;
+                    height: 48px;
+                    text: a.person.name;
+                    detail: !a.granted ? "Can’t use it" : (root.plugin.hosts.length == 0 ? "Can use its tools" : "Can use its tools; websites below");
+                    on: a.granted;
+                    clicked => {
+                        if (a.granted) {
+                            root.revoke(a.agent-id, root.plugin.id);
+                        } else {
+                            root.grant(a.agent-id, root.plugin.id, []);
+                        }
+                    }
+                }
+            }
+            if a.granted && a.hosts.length > 0: VerticalLayout {
+                padding-left: 56px;
+                for h in a.hosts: Check {
+                    text: h.host;
+                    checked: h.allowed;
+                    clicked => {
+                        root.toggle-host(a.agent-id, root.plugin.id, h.host);
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component PluginsView inherits Rectangle {
+    in property <[PluginRow]> plugins;
+    callback close();
+    callback install();
+    callback grant(string, string, [string]);
+    callback revoke(string, string);
+    callback toggle-host(string, string, string);
+    callback remove(string);
+    background: Theme.ground;
+
+    VerticalLayout {
+        HorizontalLayout {
+            height: Metrics.header-height;
+            padding-left: 24px;
+            padding-right: 14px;
+            spacing: 10px;
+            Text {
+                text: "Plugins";
+                color: Theme.text;
+                font-size: TextSize.heading;
+                font-weight: 700;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                Button {
+                    icon: "plus";
+                    text: "Install a plugin";
+                    clicked => {
+                        root.install();
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: "close";
+                    label: "Close plugins";
+                    clicked => {
+                        root.close();
+                    }
+                }
+            }
+        }
+        Divider { }
+
+        flick := Flickable {
+            vertical-stretch: 1;
+            content-height: page.preferred-height;
+            HorizontalLayout {
+                width: flick.width;
+                alignment: center;
+                padding-left: 24px;
+                padding-right: 24px;
+                page := VerticalLayout {
+                    width: min(640px, root.width - 48px);
+                    padding-top: 24px;
+                    padding-bottom: 32px;
+                    spacing: 18px;
+                    Text {
+                        text: "Plugins give agents new tools. Each one runs in a sandbox: it can’t read your files, see the clock or use the network, except the websites you allow for a particular agent. Nothing is allowed until you switch it on here.";
+                        color: Theme.secondary;
+                        font-size: TextSize.small;
+                        wrap: word-wrap;
+                    }
+                    if root.plugins.length == 0: Rectangle {
+                        border-radius: Metrics.radius-card;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                        VerticalLayout {
+                            padding: 28px;
+                            spacing: 10px;
+                            HorizontalLayout {
+                                alignment: center;
+                                Icon {
+                                    name: "blocks";
+                                    size: 26px;
+                                    color: Theme.secondary;
+                                }
+                            }
+                            Text {
+                                text: "No plugins installed yet.";
+                                color: Theme.secondary;
+                                font-size: TextSize.small;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+                    for p in root.plugins: PluginCard {
+                        plugin: p;
+                        card-width: min(640px, root.width - 48px);
+                        grant(a, id, hosts) => {
+                            root.grant(a, id, hosts);
+                        }
+                        revoke(a, id) => {
+                            root.revoke(a, id);
+                        }
+                        toggle-host(a, id, host) => {
+                            root.toggle-host(a, id, host);
+                        }
+                        remove(id) => {
+                            root.remove(id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Before installing: what the plugin says it can do. Nothing has run yet.
+export component PluginPreviewDialog inherits Rectangle {
+    in property <PluginPreview> preview;
+    callback confirm();
+    callback cancel();
+    property <length> card: min(540px, root.width - 48px);
+    // Wrapped text gets this width explicitly so the card grows to fit it.
+    property <length> inner: root.card - 48px;
+    background: #00000099;
+
+    TouchArea { }
+
+    VerticalLayout {
+        alignment: center;
+        padding: 24px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: root.card;
+                border-radius: 22px;
+                background: Theme.menu;
+                border-width: 1px;
+                border-color: Theme.strong;
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 14px;
+                    if root.preview.error != "": VerticalLayout {
+                        spacing: 12px;
+                        Text {
+                            text: "Can’t install this file";
+                            color: Theme.text;
+                            font-size: TextSize.title;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.preview.error;
+                            width: root.inner;
+                            color: Theme.secondary;
+                            font-size: TextSize.small;
+                            wrap: word-wrap;
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            Button {
+                                text: "OK";
+                                clicked => {
+                                    root.cancel();
+                                }
+                            }
+                        }
+                    }
+                    if root.preview.error == "": VerticalLayout {
+                        spacing: 14px;
+                        Text {
+                            text: "Install " + root.preview.name + " " + root.preview.version + "?";
+                            width: root.inner;
+                            color: Theme.text;
+                            font-size: TextSize.title;
+                            font-weight: 700;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "Unsigned · " + root.preview.hash;
+                            color: Theme.secondary;
+                            font-size: TextSize.caption;
+                        }
+                        if root.preview.description != "": Text {
+                            text: root.preview.description;
+                            width: root.inner;
+                            color: Theme.text;
+                            font-size: TextSize.small;
+                            wrap: word-wrap;
+                        }
+                        Rectangle {
+                            border-radius: Metrics.radius-control;
+                            background: Theme.raised;
+                            VerticalLayout {
+                                padding: 14px;
+                                Capabilities {
+                                    tools: root.preview.tools;
+                                    hosts: root.preview.hosts;
+                                    text-width: root.inner - 28px;
+                                }
+                            }
+                        }
+                        Text {
+                            text: "Installing doesn’t let any agent use it. You choose which agents can, and which websites each may reach, afterwards.";
+                            width: root.inner;
+                            color: Theme.secondary;
+                            font-size: TextSize.caption;
+                            wrap: word-wrap;
+                        }
+                        if root.preview.replaces: Rectangle {
+                            border-radius: Metrics.radius-control;
+                            background: Theme.warning-bg;
+                            HorizontalLayout {
+                                padding: 12px;
+                                Text {
+                                    text: "A plugin called " + root.preview.name + " is already installed. This replaces it and removes its permissions, so you’ll allow it again for each agent.";
+                                    width: root.inner - 24px;
+                                    color: Theme.warning-fg;
+                                    font-size: TextSize.caption;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 10px;
+                            Button {
+                                kind: "secondary";
+                                text: "Cancel";
+                                clicked => {
+                                    root.cancel();
+                                }
+                            }
+                            Button {
+                                text: root.preview.replaces ? "Replace" : "Install";
+                                clicked => {
+                                    root.confirm();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

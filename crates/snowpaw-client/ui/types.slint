@@ -1,0 +1,229 @@
+// Display data the app pushes into the UI. Everything here came from the network
+// (names, previews, message text) and is shown with plain `Text`, or as `styled-text`
+// that the app built from escaped markdown; nothing is interpreted as markup here.
+
+export struct Person {
+    id: string,
+    name: string,
+    initials: string,
+    tint: color,
+    // "me" | "agent" | "note"
+    kind: string,
+    // Busy on a job.
+    working: bool,
+    // Role, e.g. "Research"; may be empty.
+    label: string,
+    // The profile picture (decoded in the sandbox, already round); initials without.
+    has-avatar: bool,
+    avatar: image,
+}
+
+export struct ChatRow {
+    id: string,
+    title: string,
+    preview: string,
+    time: string,
+    // One avatar for Note to Self and direct chats, two for agent-to-agent.
+    people: [Person],
+    pinned: bool,
+    unread: int,
+    // Non-empty on the first row of a list section ("Between agents").
+    section-label: string,
+}
+
+// One displayable piece of a message. `styled` is built by the app from a safe
+// markdown subset (everything from the network is escaped first).
+export struct MsgBlock {
+    // "text" | "h1" | "h2" | "h3" | "quote" | "code" | "image" | "display" | "rule"
+    kind: string,
+    styled: styled-text,
+    image: image,
+    image-width: length,
+    image-height: length,
+}
+
+export struct QuizQuestion {
+    prompt: string,
+    choices: [string],
+    // The correct choice (for flashcards and showing the right answer).
+    answer: int,
+    hint: string,
+    explanation: string,
+    // The choice shown as picked: the user's current selection, or what they
+    // submitted. -1 for none.
+    picked: int,
+    // The server's grading of the submitted pick: -1 not graded, 0 wrong, 1 right.
+    graded: int,
+}
+
+export struct Quiz {
+    has: bool,
+    message-id: string,
+    title: string,
+    questions: [QuizQuestion],
+    // Answers were sent and graded (and the user isn't trying again).
+    submitted: bool,
+    right: int,
+    total: int,
+    // Questions with a choice picked (before submitting).
+    answered: int,
+    // From an agent, in a chat the user takes part in.
+    can-answer: bool,
+}
+
+export struct MessageRow {
+    id: string,
+    blocks: [MsgBlock],
+    outgoing: bool,
+    time: string,
+    pending: bool,
+    // First in a run of messages from the same sender: adds spacing above.
+    group-start: bool,
+    // Labelled with the sender (chats with several other participants).
+    has-sender: bool,
+    sender: Person,
+    // A quiz instead of text blocks.
+    quiz: Quiz,
+}
+
+export struct TimelineRow {
+    // "separator" | "message" | "activity" | "welcome" (the first-run card)
+    kind: string,
+    // The separator's text, or the activity's prefix ("6 messages with").
+    label: string,
+    msg: MessageRow,
+    // The activity's participants.
+    people: [Person],
+    // The chat an activity row opens.
+    target: string,
+}
+
+// Whether this agent may talk to another one.
+export struct AgentLinkRow {
+    agent-id: string,
+    person: Person,
+    allowed: bool,
+}
+
+// An agent's model, runtime and permissions, for its settings page. Numbers are
+// text so they can be edited as typed.
+export struct AgentSetup {
+    loaded: bool,
+    connected: bool,
+    has-model: bool,
+    base-url: string,
+    model: string,
+    tls-pin: string,
+    instructions: string,
+    max-reply-tokens: string,
+    context-messages: string,
+    daily-token-limit: string,
+    has-api-key: bool,
+    // When the runtime token was issued / last used ("" if never).
+    token-issued: string,
+    token-last-used: string,
+    // "12,345 tokens in the last 24 hours".
+    usage: string,
+    links: [AgentLinkRow],
+}
+
+// One line of the security log.
+export struct AuditRow {
+    time: string,
+    title: string,
+    detail: string,
+}
+
+// A scheduled job an agent runs (or proposes), in local time words.
+export struct JobRow {
+    id: string,
+    title: string,
+    prompt: string,
+    // "proposed" | "active" | "done" | "failed" | "cancelled"
+    state: string,
+    // "Every day at 08:00" / "Once, tomorrow at 08:00"
+    schedule: string,
+    // "Next run: today at 13:00" (active jobs)
+    next-run: string,
+    running: bool,
+    // What the agent says it's doing right now.
+    progress: string,
+    // "Last run Oct 11, 08:00 · Didn't finish: …"
+    last: string,
+}
+
+// The open chat, for the conversation header and the details panel.
+export struct Conversation {
+    open: bool,
+    id: string,
+    title: string,
+    subtitle: string,
+    people: [Person],
+    note: bool,
+    // A direct chat with an agent (shows the Computer tab).
+    agent: bool,
+    // That agent's id, for editing it.
+    agent-id: string,
+    // What the agent is for (may be empty).
+    about: string,
+    // Agent-to-agent: no composer, you are reading along.
+    read-only: bool,
+    placeholder: string,
+    pinned: bool,
+    // For a direct chat: that agent's conversations with other agents.
+    related: [ChatRow],
+    // For a direct chat: the agent's model, runtime and permissions.
+    setup: AgentSetup,
+    // For a direct chat: the agent's scheduled jobs, open ones first.
+    jobs: [JobRow],
+    // For a chat between two agents: whether they may keep talking.
+    has-link: bool,
+    link-a: string,
+    link-b: string,
+    link-allowed: bool,
+}
+
+export struct PluginTool {
+    name: string,
+    description: string,
+}
+
+// A website a plugin may fetch from, and whether this agent may let it.
+export struct HostRow {
+    host: string,
+    allowed: bool,
+}
+
+// One agent's access to a plugin.
+export struct PluginAgentRow {
+    agent-id: string,
+    person: Person,
+    granted: bool,
+    hosts: [HostRow],
+}
+
+export struct PluginRow {
+    id: string,
+    name: string,
+    version: string,
+    description: string,
+    // "sha256:3f9a1c…7be2"
+    hash: string,
+    tools: [PluginTool],
+    hosts: [string],
+    agents: [PluginAgentRow],
+}
+
+// What a plugin file says it can do, read before installing (no code runs).
+export struct PluginPreview {
+    open: bool,
+    error: string,
+    name: string,
+    version: string,
+    description: string,
+    hash: string,
+    tools: [PluginTool],
+    hosts: [string],
+    // A plugin with this name is installed and would be replaced.
+    replaces: bool,
+}

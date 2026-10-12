@@ -1,0 +1,493 @@
+// The left column: brand and search, pinned agents, the chat list, and the account
+// button with its menu.
+
+import { ListView } from "std-widgets.slint";
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { Icon, PawMark, Wordmark } from "icons.slint";
+import { ChatRow } from "types.slint";
+import { Pressable, IconButton, Button, TextField, ChatAvatar, UnreadBadge, SectionLabel, Divider } from "components.slint";
+
+component PinnedChat inherits Pressable {
+    in property <ChatRow> chat;
+    in property <bool> selected;
+    label: "Pinned: " + root.chat.title;
+    width: 88px;
+    border-radius: Metrics.radius-card;
+    background: root.hovered ? Theme.hover : transparent;
+    border-width: root.focused ? 2px : 0px;
+    border-color: Theme.accent;
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 6px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 68px;
+                height: 68px;
+                border-radius: 34px;
+                border-width: 2px;
+                border-color: root.selected ? Theme.accent : transparent;
+                ChatAvatar {
+                    x: 4px;
+                    y: 4px;
+                    people: root.chat.people;
+                    size: 60px;
+                }
+                if root.chat.unread > 0: UnreadBadge {
+                    x: parent.width - self.width + 4px;
+                    y: 0;
+                    count: root.chat.unread;
+                }
+            }
+        }
+        Text {
+            text: root.chat.title;
+            color: Theme.text;
+            font-size: TextSize.caption;
+            font-weight: 600;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+component ChatListItem inherits Pressable {
+    in property <ChatRow> chat;
+    in property <bool> selected;
+    label: root.chat.title;
+    height: 68px;
+    border-radius: 14px;
+    background: root.selected ? Theme.selected : (root.hovered ? Theme.hover : transparent);
+    border-width: root.focused ? 2px : 0px;
+    border-color: Theme.accent;
+    accessible-item-selected: root.selected;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            ChatAvatar {
+                people: root.chat.people;
+                size: 44px;
+                surface: root.selected ? Theme.selected : (root.hovered ? Theme.hover : Theme.side);
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.chat.title;
+                    color: Theme.text;
+                    font-size: TextSize.body;
+                    font-weight: root.chat.unread > 0 ? 700 : 600;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.chat.time;
+                    color: root.chat.unread > 0 ? Theme.accent : Theme.secondary;
+                    font-size: TextSize.micro;
+                    vertical-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.chat.preview;
+                    color: Theme.secondary;
+                    font-size: TextSize.small;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                if root.chat.unread > 0: UnreadBadge {
+                    count: root.chat.unread;
+                }
+            }
+        }
+    }
+}
+
+component MenuItem inherits Pressable {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> danger;
+    label: root.text;
+    height: Metrics.field;
+    border-radius: Metrics.radius-control;
+    background: root.pressed ? Theme.selected : (root.hovered ? Theme.hover : transparent);
+    border-width: root.focused ? 2px : 0px;
+    border-color: Theme.accent;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: root.icon;
+                color: root.danger ? Theme.danger : Theme.secondary;
+            }
+        }
+        Text {
+            text: root.text;
+            color: root.danger ? Theme.danger : Theme.text;
+            font-size: TextSize.body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+export component Sidebar inherits Rectangle {
+    in property <[ChatRow]> chats;
+    in property <[ChatRow]> pinned;
+    in property <string> selected-chat;
+    // "online" | "connecting" | "offline"
+    in property <string> connection;
+    in property <string> status;
+    in property <string> server-address;
+    in property <string> server-fingerprint;
+    in-out property <string> search-text;
+    in-out property <bool> searching;
+    in property <bool> agents-paused;
+    callback set-agents-paused(bool);
+    callback open-chat(string);
+    callback search(string);
+    callback open-settings();
+    callback new-agent();
+    callback open-plugins();
+    callback logout();
+
+    property <string> connection-label: root.connection == "online" ? "Connected" : (root.connection == "connecting" ? "Connecting…" : "Offline");
+    property <color> connection-color: root.connection == "online" ? Theme.accent : (root.connection == "connecting" ? Theme.secondary : Theme.danger);
+
+    background: Theme.side;
+
+    VerticalLayout {
+        // Brand and search.
+        HorizontalLayout {
+            height: Metrics.header-height;
+            padding-left: 20px;
+            padding-right: 14px;
+            spacing: 10px;
+            Wordmark {
+                size: 22px;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: "plus";
+                    label: "New agent";
+                    clicked => {
+                        root.new-agent();
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: root.searching ? "close" : "search";
+                    label: root.searching ? "Close search" : "Search chats";
+                    active: root.searching;
+                    clicked => {
+                        if (root.searching) {
+                            root.searching = false;
+                            root.search-text = "";
+                            root.search("");
+                        } else {
+                            // The field focuses itself when it appears.
+                            root.searching = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.searching: HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-bottom: 12px;
+            search-field := TextField {
+                placeholder: "Search chats";
+                text <=> root.search-text;
+                edited(t) => {
+                    root.search(t);
+                }
+                init => {
+                    self.focus-input();
+                }
+            }
+        }
+
+        // Pinned agents, at most three, centered.
+        if root.pinned.length > 0 && !root.searching: HorizontalLayout {
+            vertical-stretch: 0;
+            alignment: center;
+            spacing: 4px;
+            padding-bottom: 12px;
+            for chat in root.pinned: PinnedChat {
+                chat: chat;
+                selected: chat.id == root.selected-chat;
+                clicked => {
+                    root.open-chat(chat.id);
+                }
+            }
+        }
+
+        // The kill switch is on: say so wherever the user is.
+        if root.agents-paused: HorizontalLayout {
+            vertical-stretch: 0;
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-bottom: 8px;
+            Rectangle {
+                background: Theme.warning-bg;
+                border-radius: Metrics.radius-control;
+                HorizontalLayout {
+                    padding: 10px;
+                    spacing: 10px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: "All agents are paused";
+                            color: Theme.warning-fg;
+                            font-size: TextSize.small;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "They can’t send messages or use their models.";
+                            color: Theme.warning-fg;
+                            font-size: TextSize.caption;
+                            wrap: word-wrap;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            kind: "secondary";
+                            text: "Resume";
+                            clicked => {
+                                root.set-agents-paused(false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.connection != "online" && root.status != "": HorizontalLayout {
+            vertical-stretch: 0;
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-bottom: 8px;
+            Rectangle {
+                background: Theme.warning-bg;
+                border-radius: Metrics.radius-control;
+                HorizontalLayout {
+                    padding: 10px;
+                    Text {
+                        text: root.status;
+                        color: Theme.warning-fg;
+                        font-size: TextSize.caption;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        if root.chats.length == 0 && root.searching && root.search-text != "": Text {
+            text: "No chats match “" + root.search-text + "”";
+            color: Theme.secondary;
+            font-size: TextSize.small;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+            vertical-stretch: 1;
+            vertical-alignment: top;
+        }
+
+        ListView {
+            vertical-stretch: 1;
+            for chat in root.chats: VerticalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                if chat.section-label != "": HorizontalLayout {
+                    padding-left: 12px;
+                    padding-top: 16px;
+                    padding-bottom: 6px;
+                    SectionLabel {
+                        text: chat.section-label;
+                    }
+                }
+                ChatListItem {
+                    chat: chat;
+                    selected: chat.id == root.selected-chat;
+                    clicked => {
+                        root.open-chat(chat.id);
+                    }
+                }
+            }
+        }
+
+        Divider { }
+
+        // Account and connection.
+        HorizontalLayout {
+            padding: 12px;
+            spacing: 10px;
+            IconButton {
+                icon: "person";
+                label: "Account and server";
+                active: menu.is-open;
+                clicked => {
+                    menu.show();
+                }
+            }
+            Pressable {
+                label: root.connection-label + ", " + root.server-address + ". Open account menu";
+                height: Metrics.control;
+                horizontal-stretch: 1;
+                border-radius: self.height / 2;
+                background: self.hovered ? Theme.hover : transparent;
+                border-width: self.focused ? 2px : 1px;
+                border-color: self.focused ? Theme.accent : Theme.line;
+                clicked => {
+                    menu.show();
+                }
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 8px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.connection-color;
+                        }
+                    }
+                    Text {
+                        text: root.connection-label;
+                        color: Theme.text;
+                        font-size: TextSize.caption;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.server-address;
+                        color: Theme.secondary;
+                        font-size: TextSize.caption;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+        }
+    }
+
+    menu := PopupWindow {
+        x: 12px;
+        y: root.height - 64px - 304px;
+        width: 284px;
+        height: 304px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.menu;
+            border-radius: Metrics.radius-card;
+            border-width: 1px;
+            border-color: Theme.strong;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 2px;
+                // The server and its pinned certificate.
+                Rectangle {
+                    border-radius: Metrics.radius-control;
+                    background: Theme.raised;
+                    HorizontalLayout {
+                        padding: 10px;
+                        spacing: 12px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 36px;
+                                height: 36px;
+                                border-radius: 18px;
+                                background: Theme.accent-soft;
+                                Icon {
+                                    x: 8px;
+                                    y: 8px;
+                                    name: "shield";
+                                    color: Theme.accent;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: root.server-address;
+                                color: Theme.text;
+                                font-size: TextSize.body;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: "Certificate pinned · " + root.server-fingerprint;
+                                color: Theme.secondary;
+                                font-size: TextSize.micro;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 9px;
+                }
+                MenuItem {
+                    icon: root.agents-paused ? "play" : "pause";
+                    text: root.agents-paused ? "Resume all agents" : "Pause all agents";
+                    clicked => {
+                        menu.close();
+                        root.set-agents-paused(!root.agents-paused);
+                    }
+                }
+                MenuItem {
+                    icon: "blocks";
+                    text: "Plugins";
+                    clicked => {
+                        menu.close();
+                        root.open-plugins();
+                    }
+                }
+                MenuItem {
+                    icon: "sliders";
+                    text: "Settings";
+                    clicked => {
+                        menu.close();
+                        root.open-settings();
+                    }
+                }
+                MenuItem {
+                    icon: "logout";
+                    text: "Log out";
+                    clicked => {
+                        menu.close();
+                        root.logout();
+                    }
+                }
+            }
+        }
+    }
+}

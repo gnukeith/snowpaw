@@ -1,0 +1,645 @@
+// Creating an agent, or editing one: picture, name, role and what it's for.
+// Shown in place of the conversation, like Settings.
+
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { Icon } from "icons.slint";
+import { Person, AgentSetup } from "types.slint";
+import { Pressable, IconButton, Button, TextField, Avatar, SectionLabel, Switch, Divider } from "components.slint";
+
+component FieldLabel inherits HorizontalLayout {
+    in property <string> text;
+    in property <string> hint;
+    spacing: 8px;
+    Text {
+        text: root.text;
+        color: Theme.text;
+        font-size: TextSize.small;
+        font-weight: 700;
+    }
+    Text {
+        text: root.hint;
+        color: Theme.secondary;
+        font-size: TextSize.caption;
+        horizontal-stretch: 1;
+    }
+}
+
+component FieldError inherits Text {
+    color: Theme.danger;
+    font-size: TextSize.caption;
+    wrap: word-wrap;
+}
+
+// A multi-line text box that grows with its text.
+component TextArea inherits Rectangle {
+    in property <string> placeholder;
+    in property <string> label;
+    in-out property <string> text <=> input.text;
+    callback edited(string);
+    min-height: 96px;
+    border-radius: Metrics.radius-control;
+    background: Theme.raised;
+    border-width: input.has-focus ? 2px : 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.line;
+    clip: true;
+    if input.text == "" && input.preedit-text == "": Text {
+        x: 15px;
+        y: 12px;
+        width: parent.width - 30px;
+        text: root.placeholder;
+        color: Theme.secondary;
+        font-size: TextSize.body;
+        wrap: word-wrap;
+        accessible-role: none;
+    }
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        input := TextInput {
+            single-line: false;
+            wrap: word-wrap;
+            color: Theme.text;
+            font-size: TextSize.body;
+            selection-background-color: Theme.accent-soft;
+            selection-foreground-color: Theme.text;
+            accessible-label: root.label;
+            edited => {
+                root.edited(self.text);
+            }
+        }
+    }
+}
+
+// A titled group of settings.
+component Section inherits VerticalLayout {
+    in property <string> title;
+    in property <string> detail;
+    spacing: 8px;
+    HorizontalLayout {
+        padding-left: 4px;
+        SectionLabel {
+            text: root.title;
+        }
+    }
+    if root.detail != "": Text {
+        text: root.detail;
+        color: Theme.secondary;
+        font-size: TextSize.caption;
+        wrap: word-wrap;
+    }
+    Rectangle {
+        border-radius: Metrics.radius-card;
+        background: Theme.raised;
+        VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            @children
+        }
+    }
+}
+
+// A field label with the field under it.
+component Field inherits VerticalLayout {
+    in property <string> text;
+    in property <string> hint;
+    spacing: 6px;
+    FieldLabel {
+        text: root.text;
+        hint: root.hint;
+    }
+    @children
+}
+
+export component AgentEditor inherits Rectangle {
+    // True to create a new agent; false to edit `person`.
+    in property <bool> creating;
+    in property <Person> person;
+    in property <string> agent-id;
+    in-out property <string> name;
+    in-out property <string> label;
+    in-out property <string> about;
+    // Set by the app as the fields change.
+    in property <string> name-error;
+    in property <string> label-error;
+    in property <string> about-error;
+    in property <bool> valid;
+    in property <string> initials;
+    // The picture chosen for a new agent (its file name), uploaded once it exists.
+    in property <string> picture-name;
+    in property <string> notice;
+    callback validate(string, string, string);
+    callback choose-picture(string);
+    callback remove-picture(string);
+    callback create(string, string, string);
+    callback update(string, string, string, string);
+    callback close();
+
+    // Model, runtime and permissions (editing only).
+    in property <AgentSetup> setup;
+    in property <string> model-error;
+    callback save-model(string, [string]);
+    callback issue-token(string);
+    callback revoke-token(string);
+    callback set-link(string, string, bool);
+
+    property <string> base-url;
+    property <string> model;
+    property <string> tls-pin;
+    property <string> instructions;
+    property <string> max-reply;
+    property <string> context;
+    property <string> daily;
+    property <string> api-key;
+    property <bool> clear-key;
+    property <bool> advanced;
+    // The user has typed in the model form; don't overwrite it with fresh data.
+    property <bool> model-dirty;
+
+    function load-model() {
+        root.base-url = root.setup.base-url;
+        root.model = root.setup.model;
+        root.tls-pin = root.setup.tls-pin;
+        root.instructions = root.setup.instructions;
+        root.max-reply = root.setup.max-reply-tokens;
+        root.context = root.setup.context-messages;
+        root.daily = root.setup.daily-token-limit;
+        root.api-key = "";
+        root.clear-key = false;
+    }
+    init => {
+        root.load-model();
+    }
+    changed setup => {
+        if (!root.model-dirty) {
+            root.load-model();
+        }
+    }
+
+    background: Theme.ground;
+
+    VerticalLayout {
+        HorizontalLayout {
+            height: Metrics.header-height;
+            padding-left: 24px;
+            padding-right: 14px;
+            Text {
+                text: root.creating ? "New agent" : "Edit " + root.person.name;
+                color: Theme.text;
+                font-size: TextSize.heading;
+                font-weight: 700;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: "close";
+                    label: "Close";
+                    clicked => {
+                        root.close();
+                    }
+                }
+            }
+        }
+        Divider { }
+
+        flick := Flickable {
+            vertical-stretch: 1;
+            content-height: page.preferred-height;
+            HorizontalLayout {
+                width: flick.width;
+                alignment: center;
+                padding-left: 24px;
+                padding-right: 24px;
+                page := VerticalLayout {
+                    width: min(560px, root.width - 48px);
+                    padding-top: 28px;
+                    padding-bottom: 32px;
+                    spacing: 22px;
+
+                    // Picture.
+                    HorizontalLayout {
+                        spacing: 20px;
+                        VerticalLayout {
+                            alignment: center;
+                            if root.creating: Avatar {
+                                size: 96px;
+                                surface: Theme.ground;
+                                person: {
+                                    name: root.name,
+                                    initials: root.initials,
+                                    tint: Theme.accent-fill,
+                                    kind: "agent",
+                                };
+                            }
+                            if !root.creating: Avatar {
+                                size: 96px;
+                                surface: Theme.ground;
+                                person: root.person;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 10px;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: "Picture";
+                                color: Theme.text;
+                                font-size: TextSize.small;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: root.creating ? (root.picture-name != "" ? root.picture-name + " will be added once the agent is created." : "Optional. A square photo or drawing works best.") : "PNG, JPEG, GIF or WebP, up to 20 MB. It’s cropped to a square and cleaned of hidden data first.";
+                                color: Theme.secondary;
+                                font-size: TextSize.caption;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 8px;
+                                Button {
+                                    kind: "secondary";
+                                    icon: "file";
+                                    text: (root.creating && root.picture-name != "") || (!root.creating && root.person.has-avatar) ? "Change picture" : "Choose picture";
+                                    clicked => {
+                                        root.choose-picture(root.creating ? "" : root.agent-id);
+                                    }
+                                }
+                                if (root.creating && root.picture-name != "") || (!root.creating && root.person.has-avatar): Button {
+                                    kind: "quiet";
+                                    text: "Remove";
+                                    clicked => {
+                                        root.remove-picture(root.creating ? "" : root.agent-id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        FieldLabel {
+                            text: "Name";
+                        }
+                        TextField {
+                            text <=> root.name;
+                            label: "Name";
+                            placeholder: "e.g. Mochi";
+                            edited => {
+                                root.validate(root.name, root.label, root.about);
+                            }
+                        }
+                        if root.name-error != "": FieldError {
+                            text: root.name-error;
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        FieldLabel {
+                            text: "Role";
+                            hint: "Optional · shown under the name";
+                        }
+                        TextField {
+                            text <=> root.label;
+                            label: "Role";
+                            placeholder: "e.g. Research, Code, Writing";
+                            edited => {
+                                root.validate(root.name, root.label, root.about);
+                            }
+                        }
+                        if root.label-error != "": FieldError {
+                            text: root.label-error;
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        FieldLabel {
+                            text: "What it’s for";
+                            hint: "Optional · up to 500 characters";
+                        }
+                        TextArea {
+                            text <=> root.about;
+                            label: "What it’s for";
+                            placeholder: "e.g. Looks things up and writes short reports.";
+                            edited => {
+                                root.validate(root.name, root.label, root.about);
+                            }
+                        }
+                        if root.about-error != "": FieldError {
+                            text: root.about-error;
+                        }
+                    }
+
+                    if root.notice != "": Rectangle {
+                        border-radius: Metrics.radius-control;
+                        background: Theme.warning-bg;
+                        HorizontalLayout {
+                            padding: 12px;
+                            Text {
+                                text: root.notice;
+                                color: Theme.warning-fg;
+                                font-size: TextSize.caption;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+                        spacing: 10px;
+                        Button {
+                            text: root.creating ? "Create agent" : "Save profile";
+                            height: 44px;
+                            enabled: root.valid;
+                            clicked => {
+                                if (root.creating) {
+                                    root.create(root.name, root.label, root.about);
+                                } else {
+                                    root.update(root.agent-id, root.name, root.label, root.about);
+                                }
+                            }
+                        }
+                        Button {
+                            kind: "secondary";
+                            text: root.creating ? "Cancel" : "Close";
+                            height: 44px;
+                            clicked => {
+                                root.close();
+                            }
+                        }
+                    }
+
+                    if !root.creating: VerticalLayout {
+                        spacing: 28px;
+                        padding-top: 8px;
+
+                        Section {
+                            title: "MODEL";
+                            detail: "Where " + root.person.name + " thinks: any OpenAI-compatible model server. Plain http is only allowed for one on this computer.";
+                            Field {
+                                text: "Server URL";
+                                TextField {
+                                    text <=> root.base-url;
+                                    label: "Model server URL";
+                                    placeholder: "https://api.example.com/v1";
+                                    edited => {
+                                        root.model-dirty = true;
+                                    }
+                                }
+                            }
+                            Field {
+                                text: "Model";
+                                TextField {
+                                    text <=> root.model;
+                                    label: "Model name";
+                                    placeholder: "e.g. gpt-oss-20b";
+                                    edited => {
+                                        root.model-dirty = true;
+                                    }
+                                }
+                            }
+                            Field {
+                                text: "API key";
+                                hint: root.setup.has-api-key && !root.clear-key ? "A key is saved" : "Optional";
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    TextField {
+                                        text <=> root.api-key;
+                                        password: true;
+                                        label: "API key";
+                                        placeholder: root.setup.has-api-key && !root.clear-key ? "Leave empty to keep the saved key" : "Paste a key if the server needs one";
+                                        edited => {
+                                            root.model-dirty = true;
+                                            root.clear-key = false;
+                                        }
+                                    }
+                                    if root.setup.has-api-key && !root.clear-key: VerticalLayout {
+                                        alignment: center;
+                                        Button {
+                                            kind: "quiet";
+                                            text: "Remove";
+                                            clicked => {
+                                                root.api-key = "";
+                                                root.clear-key = true;
+                                                root.model-dirty = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                if root.clear-key: Text {
+                                    text: "The saved key will be removed when you save.";
+                                    color: Theme.secondary;
+                                    font-size: TextSize.caption;
+                                }
+                            }
+                            Field {
+                                text: "Instructions";
+                                hint: "How it should behave";
+                                TextArea {
+                                    text <=> root.instructions;
+                                    label: "Instructions";
+                                    placeholder: "e.g. You look things up and write short, sourced reports.";
+                                    edited => {
+                                        root.model-dirty = true;
+                                    }
+                                }
+                            }
+                            Pressable {
+                                label: root.advanced ? "Hide advanced settings" : "Show advanced settings";
+                                height: 32px;
+                                border-radius: 16px;
+                                border-width: self.focused ? 2px : 0px;
+                                border-color: Theme.accent;
+                                clicked => {
+                                    root.advanced = !root.advanced;
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Text {
+                                        text: root.advanced ? "Hide advanced" : "Advanced: limits and certificate";
+                                        color: Theme.accent;
+                                        font-size: TextSize.small;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            if root.advanced: VerticalLayout {
+                                spacing: 12px;
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Field {
+                                        text: "Reply length";
+                                        hint: "tokens";
+                                        TextField {
+                                            text <=> root.max-reply;
+                                            label: "Longest reply, in tokens";
+                                            edited => {
+                                                root.model-dirty = true;
+                                            }
+                                        }
+                                    }
+                                    Field {
+                                        text: "Memory";
+                                        hint: "messages";
+                                        TextField {
+                                            text <=> root.context;
+                                            label: "Recent messages it reads";
+                                            edited => {
+                                                root.model-dirty = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                Field {
+                                    text: "Daily limit";
+                                    hint: "tokens per 24 hours · 0 turns the model off";
+                                    TextField {
+                                        text <=> root.daily;
+                                        label: "Daily token limit";
+                                        edited => {
+                                            root.model-dirty = true;
+                                        }
+                                    }
+                                }
+                                Field {
+                                    text: "Server certificate";
+                                    hint: "Optional · for a model server with a self-signed certificate";
+                                    TextField {
+                                        text <=> root.tls-pin;
+                                        label: "Model server certificate fingerprint";
+                                        placeholder: "sha256:…";
+                                        mono: true;
+                                        edited => {
+                                            root.model-dirty = true;
+                                        }
+                                    }
+                                }
+                            }
+                            if root.model-error != "": FieldError {
+                                text: root.model-error;
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 10px;
+                                Button {
+                                    text: "Save model settings";
+                                    enabled: root.base-url != "" && root.model != "";
+                                    clicked => {
+                                        root.model-dirty = false;
+                                        root.save-model(root.agent-id, [
+                                            root.base-url,
+                                            root.model,
+                                            root.tls-pin,
+                                            root.instructions,
+                                            root.max-reply,
+                                            root.context,
+                                            root.daily,
+                                            root.clear-key ? "clear" : (root.api-key != "" ? "set" : "keep"),
+                                            root.api-key,
+                                        ]);
+                                        root.api-key = "";
+                                    }
+                                }
+                                if root.setup.usage != "": Text {
+                                    text: root.setup.usage;
+                                    color: Theme.secondary;
+                                    font-size: TextSize.caption;
+                                    vertical-alignment: center;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+
+                        Section {
+                            title: "RUNTIME";
+                            detail: root.person.name + " runs as a separate program, in its own sandbox. It signs in to your server with a token you get here.";
+                            HorizontalLayout {
+                                spacing: 10px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 10px;
+                                        height: 10px;
+                                        border-radius: 5px;
+                                        background: root.setup.connected ? Theme.accent : Theme.strong;
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    Text {
+                                        text: root.setup.connected ? "Connected" : "Not connected";
+                                        color: Theme.text;
+                                        font-size: TextSize.body;
+                                        font-weight: 700;
+                                    }
+                                    Text {
+                                        text: root.setup.token-issued == "" ? "No token yet." : "Token issued " + root.setup.token-issued + (root.setup.token-last-used != "" ? " · last used " + root.setup.token-last-used : " · not used yet");
+                                        color: Theme.secondary;
+                                        font-size: TextSize.caption;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 10px;
+                                Button {
+                                    kind: root.setup.token-issued == "" ? "primary" : "secondary";
+                                    icon: "key";
+                                    text: root.setup.token-issued == "" ? "Get a runtime token" : "Get a new token";
+                                    clicked => {
+                                        root.issue-token(root.agent-id);
+                                    }
+                                }
+                                if root.setup.token-issued != "": Button {
+                                    kind: "quiet";
+                                    text: "Revoke token";
+                                    clicked => {
+                                        root.revoke-token(root.agent-id);
+                                    }
+                                }
+                            }
+                        }
+
+                        Section {
+                            title: "CAN TALK TO";
+                            detail: "Agents only message each other when you allow it. You can read along in every conversation between agents.";
+                            if root.setup.links.length == 0: Text {
+                                text: "There are no other agents yet.";
+                                color: Theme.secondary;
+                                font-size: TextSize.small;
+                            }
+                            for link in root.setup.links: HorizontalLayout {
+                                spacing: 12px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Avatar {
+                                        person: link.person;
+                                        size: 32px;
+                                        surface: Theme.raised;
+                                    }
+                                }
+                                Switch {
+                                    horizontal-stretch: 1;
+                                    height: 48px;
+                                    text: link.person.name;
+                                    detail: link.allowed ? "Allowed" : "Not allowed";
+                                    on: link.allowed;
+                                    clicked => {
+                                        root.set-link(root.agent-id, link.agent-id, !link.allowed);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

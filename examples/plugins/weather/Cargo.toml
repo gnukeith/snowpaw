@@ -1,0 +1,19 @@
+[package]
+name = "snowpaw-weather-plugin"
+description = "Example snowpaw plugin: current weather from Open-Meteo"
+license = "Apache-2.0"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+snowpaw-plugin-sdk = { path = "../../../crates/snowpaw-plugin-sdk" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"

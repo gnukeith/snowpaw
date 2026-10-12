@@ -1,0 +1,1160 @@
+// First launch and every login: a snowy scene on the left where paw prints walk a
+// little further with each step, and one simple step at a time on the right.
+//
+// Steps: "welcome" -> "server" (have one?) -> "guide" (how to set one up) ->
+// "connect" (paste the connection code) -> "verify" (check its certificate) ->
+// "login". Returning users start at "login".
+
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { Icon, PawMark, Wordmark } from "icons.slint";
+import { Pressable, IconButton, Button, TextField } from "components.slint";
+
+// Fades and lifts its content into place a moment after it appears.
+component Rise inherits Rectangle {
+    in property <duration> delay: 0ms;
+    property <bool> shown;
+    property <length> lift: root.shown ? 0px : 10px;
+    animate lift { duration: 520ms; easing: cubic-bezier(0.2, 0.7, 0.2, 1); }
+    opacity: root.shown ? 1 : 0;
+    animate opacity { duration: 420ms; easing: ease-out; }
+
+    Timer {
+        interval: root.delay + 30ms;
+        running: !root.shown;
+        triggered => {
+            root.shown = true;
+        }
+    }
+
+    VerticalLayout {
+        // Moving padding from bottom to top keeps the overall height fixed.
+        padding-top: root.lift;
+        padding-bottom: 10px - root.lift;
+        @children
+    }
+}
+
+component Title inherits Text {
+    color: Theme.text;
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    wrap: word-wrap;
+}
+
+component Lead inherits Text {
+    color: Theme.secondary;
+    font-size: 16px;
+    wrap: word-wrap;
+}
+
+// One step of progress as a short bar; the current step is wider.
+component StepBars inherits HorizontalLayout {
+    in property <int> current;
+    spacing: 6px;
+    horizontal-stretch: 0;
+    for i in 4: VerticalLayout {
+        alignment: center;
+        Rectangle {
+            width: i == root.current ? 28px : 10px;
+            animate width { duration: 400ms; easing: cubic-bezier(0.2, 0.7, 0.2, 1); }
+            height: 6px;
+            border-radius: 3px;
+            background: i <= root.current ? Theme.accent : Theme.strong;
+            animate background { duration: 400ms; }
+        }
+    }
+}
+
+// The scene: night (or morning) sky, falling snow, a snowfield, and paw prints.
+component Scene inherits Rectangle {
+    // How many paw prints the trail should reach.
+    in property <int> prints;
+    property <int> shown;
+    property <float> t: Theme.reduce-motion ? 0 : animation-tick() / 1ms;
+    background: Theme.sky;
+    clip: true;
+    accessible-role: none;
+
+    changed prints => {
+        if (root.shown > root.prints) {
+            root.shown = root.prints;
+        }
+    }
+    // Prints appear one after another.
+    Timer {
+        interval: 230ms;
+        running: root.shown < root.prints;
+        triggered => {
+            root.shown += 1;
+        }
+    }
+
+    for i in 26: Rectangle {
+        property <float> speed: 0.018 + mod(i * 13, 10) * 0.004;
+        property <float> span: root.height / 1px + 20;
+        width: (2 + mod(i * 7, 4)) * 1px;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.flake;
+        opacity: 0.35 + mod(i * 11, 6) * 0.09;
+        x: mod(i * 41.3, 100) / 100 * root.width + sin(root.t * 0.05deg + i * 40deg) * 6px;
+        y: (mod(i * 97.0 + root.t * self.speed, self.span) - 10) * 1px;
+    }
+
+    // The snowfield: the top of a very large circle, for a gentle curve.
+    Rectangle {
+        width: root.width * 2.4;
+        height: self.width;
+        x: (root.width - self.width) / 2;
+        y: root.height * 0.58;
+        border-radius: self.width / 2;
+        background: Theme.field;
+        border-width: 2px;
+        border-color: Theme.field-edge;
+    }
+
+    for i in 10: Image {
+        source: @image-url("art/paw-step.svg");
+        colorize: Theme.print;
+        width: 38px;
+        height: 38px;
+        x: (6 + i * 8.6 + (mod(i, 2) == 1 ? 2.2 : 0)) / 100 * root.width;
+        y: (88 - i * 2.4 - sin(i * 35deg) * 2 - (mod(i, 2) == 1 ? 3.2 : 0)) / 100 * root.height;
+        opacity: i < root.shown ? 1 : 0;
+        animate opacity { duration: 480ms; easing: ease-out; }
+    }
+
+    Wordmark {
+        x: 36px;
+        y: 30px;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        size: 26px;
+        ink: Theme.sky-text;
+    }
+}
+
+// A big tappable answer to a question.
+component ChoiceCard inherits Pressable {
+    in property <string> icon;
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> strong;
+    label: root.title + ". " + root.detail;
+    height: 80px;
+    border-radius: 18px;
+    background: root.pressed ? Theme.selected : (root.hovered ? Theme.hover : (root.strong ? Theme.raised : transparent));
+    border-width: root.focused ? 2px : 1px;
+    border-color: root.focused ? Theme.accent : (root.strong ? Theme.strong : Theme.line);
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 16px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 44px;
+                border-radius: 14px;
+                background: root.strong ? Theme.accent-soft : Theme.raised;
+                Icon {
+                    x: 11px;
+                    y: 11px;
+                    size: 22px;
+                    weight: 2px;
+                    name: root.icon;
+                    color: root.strong ? Theme.accent : Theme.secondary;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: 16px;
+                font-weight: 700;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.secondary;
+                font-size: TextSize.small;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                name: "chevron-right";
+                color: Theme.secondary;
+            }
+        }
+    }
+}
+
+// One numbered setup command with a Copy button.
+component CommandStep inherits HorizontalLayout {
+    in property <int> number;
+    in property <string> title;
+    in property <string> command;
+    in property <string> note;
+    callback copy(string);
+    property <bool> copied;
+    spacing: 14px;
+
+    Timer {
+        interval: 1600ms;
+        running: root.copied;
+        triggered => {
+            root.copied = false;
+        }
+    }
+
+    VerticalLayout {
+        alignment: start;
+        Rectangle {
+            width: 30px;
+            height: 30px;
+            border-radius: 15px;
+            background: Theme.accent-fill;
+            Text {
+                text: root.number;
+                color: Theme.on-accent;
+                font-size: TextSize.small;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+    VerticalLayout {
+        spacing: 8px;
+        horizontal-stretch: 1;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: TextSize.body;
+            font-weight: 700;
+            height: 30px;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            border-radius: Metrics.radius-control;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.code-bg;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 6px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 8px;
+                Text {
+                    text: root.command;
+                    color: Theme.code-fg;
+                    font-family: Theme.mono;
+                    font-size: TextSize.caption;
+                    vertical-alignment: center;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Pressable {
+                        label: root.copied ? "Copied" : "Copy command";
+                        height: 34px;
+                        width: 76px;
+                        border-radius: 9px;
+                        background: root.copied ? Theme.accent-soft : (self.hovered ? Theme.hover : Theme.raised);
+                        border-width: self.focused ? 2px : 0px;
+                        border-color: Theme.accent;
+                        clicked => {
+                            root.copy(root.command);
+                            root.copied = true;
+                        }
+                        Text {
+                            text: root.copied ? "Copied" : "Copy";
+                            color: root.copied ? Theme.accent : Theme.text;
+                            font-size: TextSize.caption;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+        if root.note != "": Text {
+            text: root.note;
+            color: Theme.secondary;
+            font-size: TextSize.caption;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// A labelled row in a small summary card.
+component CheckRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> mono;
+    padding-left: 14px;
+    padding-right: 14px;
+    spacing: 12px;
+    height: 48px;
+    VerticalLayout {
+        alignment: center;
+        Icon {
+            name: "check";
+            size: 18px;
+            weight: 2.2px;
+            color: Theme.accent;
+        }
+    }
+    Text {
+        text: root.label;
+        color: Theme.secondary;
+        font-size: TextSize.small;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+    Text {
+        text: root.value;
+        color: Theme.text;
+        font-size: root.mono ? TextSize.caption : TextSize.small;
+        font-family: root.mono ? Theme.mono : "";
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+}
+
+// A round badge that pops in: a check when all is well, a warning otherwise.
+component Badge inherits Rectangle {
+    in property <string> icon;
+    in property <bool> warn;
+    property <bool> shown;
+    property <length> size: root.shown ? 88px : 44px;
+    animate size { duration: 520ms; easing: ease-out-back; }
+    width: 96px;
+    height: 96px;
+    Timer {
+        interval: 40ms;
+        running: !root.shown;
+        triggered => {
+            root.shown = true;
+        }
+    }
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        background: root.warn ? Theme.danger-soft : Theme.accent-fill;
+        opacity: root.shown ? 1 : 0;
+        animate opacity { duration: 300ms; }
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            name: root.icon;
+            size: root.size * 0.48;
+            weight: 2.4px;
+            color: root.warn ? Theme.danger : Theme.on-accent;
+        }
+    }
+}
+
+export component Onboarding inherits Rectangle {
+    // Which step is showing (see the top of this file).
+    in-out property <string> step: "welcome";
+    // Connect: a pasted connection code, or the address and fingerprint typed in.
+    in-out property <string> code;
+    in-out property <bool> manual;
+    in-out property <string> address;
+    in-out property <string> fingerprint;
+    // Set by the app as the code is typed: "empty" | "ok" | "bad".
+    in property <string> code-state: "empty";
+    in property <string> fingerprint-short;
+    in property <string> fingerprint-groups;
+    in property <string> setup-error;
+    in property <bool> can-cancel;
+    // Verify: "checking" | "ok" | "failed", with a message for failures.
+    in-out property <string> verify-state: "checking";
+    in property <string> verify-message;
+    // The server passed the check during this run of the app.
+    in-out property <bool> verified;
+    // The user came through the connect steps during this run (not a returning login).
+    in-out property <bool> onboarded;
+    in-out property <string> password;
+    // Login.
+    in property <string> server-label;
+    in property <string> login-error;
+    in property <bool> login-busy;
+
+    callback code-edited(string);
+    callback test-connection(string, string);
+    callback save(string, string);
+    callback cancel();
+    callback login(string);
+    callback open-setup();
+
+    public function clear-password() {
+        root.password = "";
+    }
+
+    property <int> stage: root.step == "welcome" ? 0 : (root.step == "verify" ? 2 : (root.step == "login" ? 3 : 1));
+    property <int> prints: root.step == "welcome" ? 2 : root.step == "server" || root.step == "guide" ? 3 : root.step == "connect" ? 4 : root.step == "verify" ? 6 : 8;
+    property <bool> ready: root.manual ? (root.address != "" && root.fingerprint != "") : root.code-state == "ok";
+    property <bool> show-scene: root.width >= 880px;
+    property <length> form-width: root.show-scene ? root.width * 0.56 : root.width;
+    // Wrong-password shake: a few quick steps of a sideways offset.
+    property <int> shake;
+    property <length> nudge: root.shake == 1 ? -9px : root.shake == 2 ? 8px : root.shake == 3 ? -5px : root.shake == 4 ? 4px : 0px;
+
+    background: Theme.ground;
+
+    changed login-error => {
+        if (root.login-error != "") {
+            root.shake = 1;
+        }
+    }
+    Timer {
+        interval: 55ms;
+        running: root.shake > 0;
+        triggered => {
+            root.shake = root.shake >= 5 ? 0 : root.shake + 1;
+        }
+    }
+
+    function go(next: string) {
+        if (next == "verify") {
+            root.onboarded = true;
+            root.verify-state = "checking";
+            root.test-connection(root.address, root.fingerprint);
+        }
+        root.step = next;
+    }
+
+    function back() {
+        if (root.step == "server") {
+            root.go("welcome");
+        } else if (root.step == "guide") {
+            root.go("server");
+        } else if (root.step == "connect") {
+            if (root.can-cancel) {
+                root.cancel();
+            } else {
+                root.go("server");
+            }
+        } else {
+            root.go("connect");
+        }
+    }
+
+    property <bool> show-back: root.step != "welcome" && (root.step != "login" || root.onboarded) && !(root.step == "connect" && root.can-cancel);
+
+    HorizontalLayout {
+        if root.show-scene: Scene {
+            width: root.width * 0.44;
+            prints: root.prints;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            padding-left: 40px;
+            padding-right: 40px;
+            padding-top: 24px;
+            padding-bottom: 32px;
+
+            // Back and progress.
+            HorizontalLayout {
+                height: 44px;
+                vertical-stretch: 0;
+                if root.show-back: Pressable {
+                    label: "Back";
+                    height: 40px;
+                    width: 84px;
+                    border-radius: 20px;
+                    background: self.hovered ? Theme.hover : transparent;
+                    border-width: self.focused ? 2px : 0px;
+                    border-color: Theme.accent;
+                    clicked => {
+                        root.back();
+                    }
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        spacing: 4px;
+                        VerticalLayout {
+                            alignment: center;
+                            Icon {
+                                name: "chevron-left";
+                                size: 18px;
+                                weight: 2px;
+                                color: Theme.secondary;
+                            }
+                        }
+                        Text {
+                            text: "Back";
+                            color: Theme.secondary;
+                            font-size: TextSize.small;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                if root.step != "welcome" && (root.step != "login" || root.onboarded) && !root.can-cancel: HorizontalLayout {
+                    horizontal-stretch: 0;
+                    spacing: 12px;
+                    Text {
+                        text: "Step " + (root.stage + 1) + " of 4 · " + (root.stage == 1 ? "Connect" : root.stage == 2 ? "Verify" : "Log in");
+                        color: Theme.secondary;
+                        font-size: TextSize.caption;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    StepBars {
+                        current: root.stage;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                vertical-stretch: 1;
+                VerticalLayout {
+                    alignment: center;
+                    // An explicit width, so wrapped text is measured at the real width.
+                    width: min(460px, root.form-width - 80px);
+
+                    if root.step == "welcome": VerticalLayout {
+                        spacing: 18px;
+                        Rise {
+                            Title {
+                                text: "Your own AI agents, on your own server.";
+                                font-size: 40px;
+                            }
+                        }
+                        Rise {
+                            delay: 90ms;
+                            Lead {
+                                text: "snowpaw is a chat app for AI agents you run yourself. They can talk to each other and work on long tasks, using any model server you choose.";
+                                font-size: 17px;
+                            }
+                        }
+                        for f[i] in [
+                            { icon: "shield", title: "Private by design", text: "Your chats are stored on a server you run, not in someone else’s cloud." },
+                            { icon: "chats", title: "Agents that team up", text: "They can message each other, and you can read along." },
+                            { icon: "cpu", title: "Bring your own model", text: "Works with any OpenAI-compatible model server." },
+                        ]: Rise {
+                            delay: 180ms + i * 90ms;
+                            HorizontalLayout {
+                                spacing: 14px;
+                                VerticalLayout {
+                                    alignment: start;
+                                    Rectangle {
+                                        width: 40px;
+                                        height: 40px;
+                                        border-radius: 12px;
+                                        background: Theme.accent-soft;
+                                        Icon {
+                                            x: 10px;
+                                            y: 10px;
+                                            name: f.icon;
+                                            color: Theme.accent;
+                                        }
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    Text {
+                                        text: f.title;
+                                        color: Theme.text;
+                                        font-size: TextSize.body;
+                                        font-weight: 700;
+                                    }
+                                    Text {
+                                        text: f.text;
+                                        color: Theme.secondary;
+                                        font-size: TextSize.small;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                        }
+                        Rise {
+                            delay: 500ms;
+                            HorizontalLayout {
+                                alignment: start;
+                                Button {
+                                    text: "Get started";
+                                    height: 48px;
+                                    clicked => {
+                                        root.go("server");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.step == "server": VerticalLayout {
+                        spacing: 18px;
+                        Rise {
+                            Title {
+                                text: "Is your snowpaw server running?";
+                            }
+                        }
+                        Rise {
+                            delay: 90ms;
+                            Lead {
+                                text: "This app connects to one server. The server keeps your chats and runs your agents. It can be on this computer or on another computer you own.";
+                            }
+                        }
+                        Rise {
+                            delay: 180ms;
+                            ChoiceCard {
+                                strong: true;
+                                icon: "check";
+                                title: "Yes, it’s running";
+                                detail: "Connect to it now";
+                                clicked => {
+                                    root.go("connect");
+                                }
+                            }
+                        }
+                        Rise {
+                            delay: 260ms;
+                            ChoiceCard {
+                                icon: "book";
+                                title: "Not yet";
+                                detail: "Show me how to set one up";
+                                clicked => {
+                                    root.go("guide");
+                                }
+                            }
+                        }
+                    }
+
+                    if root.step == "guide": VerticalLayout {
+                        spacing: 18px;
+                        Rise {
+                            Title {
+                                text: "Set up your server";
+                            }
+                        }
+                        Rise {
+                            delay: 90ms;
+                            Lead {
+                                text: "Run these three commands in a terminal, on the computer that will keep your chats.";
+                            }
+                        }
+                        Rise {
+                            delay: 180ms;
+                            CommandStep {
+                                number: 1;
+                                title: "Create the server";
+                                command: "snowpaw-server init ~/.local/share/snowpaw";
+                                note: "It prints a connection code at the end. Keep that window open; you’ll paste the code next.";
+                                copy(t) => {
+                                    root.copy(t);
+                                }
+                            }
+                        }
+                        Rise {
+                            delay: 260ms;
+                            CommandStep {
+                                number: 2;
+                                title: "Choose your password";
+                                command: "snowpaw-server set-password --config ~/.local/share/snowpaw/server.toml";
+                                copy(t) => {
+                                    root.copy(t);
+                                }
+                            }
+                        }
+                        Rise {
+                            delay: 340ms;
+                            CommandStep {
+                                number: 3;
+                                title: "Start it";
+                                command: "snowpaw-server run --config ~/.local/share/snowpaw/server.toml";
+                                note: "Leave it running while you use snowpaw.";
+                                copy(t) => {
+                                    root.copy(t);
+                                }
+                            }
+                        }
+                        Rise {
+                            delay: 420ms;
+                            HorizontalLayout {
+                                alignment: start;
+                                Button {
+                                    text: "It’s running";
+                                    height: 48px;
+                                    clicked => {
+                                        root.go("connect");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.step == "connect": VerticalLayout {
+                        spacing: 16px;
+                        Rise {
+                            Title {
+                                text: root.can-cancel ? "Server settings" : "Connect to your server";
+                            }
+                        }
+                        Rise {
+                            delay: 90ms;
+                            Lead {
+                                text: root.manual ? "Enter your server’s address and the certificate fingerprint it printed when you set it up. The fingerprint lets snowpaw tell your server apart from an impostor." : "Paste the connection code that “snowpaw-server init” printed. It tells this app where your server is, and how to recognize it.";
+                            }
+                        }
+                        if !root.manual: Rise {
+                            delay: 180ms;
+                            VerticalLayout {
+                                spacing: 10px;
+                                Text {
+                                    text: "Connection code";
+                                    color: Theme.text;
+                                    font-size: TextSize.small;
+                                    font-weight: 700;
+                                }
+                                TextField {
+                                    text <=> root.code;
+                                    label: "Connection code";
+                                    placeholder: "snowpaw://…";
+                                    mono: true;
+                                    edited(t) => {
+                                        root.code-edited(t);
+                                    }
+                                    accepted => {
+                                        if (root.ready) {
+                                            root.go("verify");
+                                        }
+                                    }
+                                }
+                                if root.code-state == "ok": Rectangle {
+                                    border-radius: 14px;
+                                    background: Theme.raised;
+                                    VerticalLayout {
+                                        CheckRow {
+                                            label: "Server";
+                                            value: root.address;
+                                        }
+                                        Rectangle {
+                                            height: 1px;
+                                            background: Theme.line;
+                                        }
+                                        CheckRow {
+                                            label: "Fingerprint";
+                                            value: root.fingerprint-short;
+                                            mono: true;
+                                        }
+                                    }
+                                }
+                                if root.code-state == "bad": Text {
+                                    text: "That doesn’t look like a connection code. It starts with snowpaw:// and is one line long.";
+                                    color: Theme.danger;
+                                    font-size: TextSize.small;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                        if root.manual: Rise {
+                            delay: 180ms;
+                            VerticalLayout {
+                                spacing: 8px;
+                                Text {
+                                    text: "Server address";
+                                    color: Theme.text;
+                                    font-size: TextSize.small;
+                                    font-weight: 700;
+                                }
+                                TextField {
+                                    text <=> root.address;
+                                    label: "Server address";
+                                    placeholder: "127.0.0.1:7443";
+                                }
+                                Text {
+                                    text: "Running on this computer? Keep 127.0.0.1:7443.";
+                                    color: Theme.secondary;
+                                    font-size: TextSize.caption;
+                                }
+                                Rectangle {
+                                    height: 6px;
+                                }
+                                Text {
+                                    text: "Certificate fingerprint";
+                                    color: Theme.text;
+                                    font-size: TextSize.small;
+                                    font-weight: 700;
+                                }
+                                TextField {
+                                    text <=> root.fingerprint;
+                                    label: "Certificate fingerprint";
+                                    placeholder: "sha256:…";
+                                    mono: true;
+                                    accepted => {
+                                        if (root.ready) {
+                                            root.go("verify");
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: "A long code starting with sha256:. Run “snowpaw-server fingerprint” to see it again.";
+                                    color: Theme.secondary;
+                                    font-size: TextSize.caption;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                        if root.setup-error != "": Text {
+                            text: root.setup-error;
+                            color: Theme.danger;
+                            font-size: TextSize.small;
+                            wrap: word-wrap;
+                        }
+                        Rise {
+                            delay: 260ms;
+                            HorizontalLayout {
+                                spacing: 10px;
+                                alignment: start;
+                                Button {
+                                    text: "Connect";
+                                    height: 48px;
+                                    enabled: root.ready;
+                                    clicked => {
+                                        root.go("verify");
+                                    }
+                                }
+                                if root.can-cancel: Button {
+                                    kind: "secondary";
+                                    text: "Cancel";
+                                    height: 48px;
+                                    clicked => {
+                                        root.cancel();
+                                    }
+                                }
+                                Pressable {
+                                    label: root.manual ? "Use a connection code instead" : "Enter the address and fingerprint instead";
+                                    height: 48px;
+                                    border-radius: 24px;
+                                    border-width: self.focused ? 2px : 0px;
+                                    border-color: Theme.accent;
+                                    clicked => {
+                                        root.manual = !root.manual;
+                                    }
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        Text {
+                                            text: root.manual ? "Use a connection code" : "Enter it by hand";
+                                            color: Theme.accent;
+                                            font-size: TextSize.small;
+                                            font-weight: 600;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.step == "verify" && root.verify-state == "checking": VerticalLayout {
+                        spacing: 18px;
+                        // Paw prints walking in place while the check runs.
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 14px;
+                            height: 76px;
+                            for i in 5: VerticalLayout {
+                                alignment: end;
+                                padding-bottom: mod(i, 2) == 1 ? 16px : 0px;
+                                PawMark {
+                                    property <float> t: Theme.reduce-motion ? 0 : animation-tick() / 1ms;
+                                    size: 30px;
+                                    color: Theme.accent;
+                                    opacity: Theme.reduce-motion ? 0.6 : 0.18 + 0.82 * max(0, sin(self.t * 0.225deg - i * 45deg));
+                                }
+                            }
+                        }
+                        Rise {
+                            Title {
+                                text: "Checking it’s really your server…";
+                                font-size: 28px;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        Rise {
+                            delay: 90ms;
+                            Lead {
+                                text: "Connecting to " + root.address + " and comparing its certificate with your code.";
+                                font-size: TextSize.body;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+
+                    if root.step == "verify" && root.verify-state == "ok": VerticalLayout {
+                        spacing: 16px;
+                        HorizontalLayout {
+                            alignment: center;
+                            Badge {
+                                icon: "check";
+                            }
+                        }
+                        Rise {
+                            delay: 120ms;
+                            Title {
+                                text: "This is your server";
+                                font-size: 30px;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        Rise {
+                            delay: 200ms;
+                            Lead {
+                                text: "Its certificate matches your code. snowpaw checks it every time it connects, so nobody can quietly stand in for your server.";
+                                font-size: TextSize.body;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        Rise {
+                            delay: 280ms;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    border-radius: 14px;
+                                    background: Theme.raised;
+                                    HorizontalLayout {
+                                        padding-left: 18px;
+                                        padding-right: 18px;
+                                        padding-top: 12px;
+                                        padding-bottom: 12px;
+                                        Text {
+                                            text: root.fingerprint-groups;
+                                            color: Theme.secondary;
+                                            font-family: Theme.mono;
+                                            font-size: TextSize.caption;
+                                            horizontal-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Rise {
+                            delay: 360ms;
+                            HorizontalLayout {
+                                alignment: center;
+                                Button {
+                                    text: "Continue";
+                                    height: 48px;
+                                    clicked => {
+                                        root.verified = true;
+                                        root.save(root.address, root.fingerprint);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.step == "verify" && root.verify-state == "failed": VerticalLayout {
+                        spacing: 16px;
+                        HorizontalLayout {
+                            alignment: center;
+                            Badge {
+                                icon: "alert";
+                                warn: true;
+                            }
+                        }
+                        Rise {
+                            delay: 120ms;
+                            Title {
+                                text: "That didn’t work";
+                                font-size: 28px;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        Rise {
+                            delay: 200ms;
+                            Lead {
+                                text: root.verify-message;
+                                font-size: TextSize.body;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        Rise {
+                            delay: 280ms;
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 10px;
+                                Button {
+                                    text: "Check the code";
+                                    height: 48px;
+                                    clicked => {
+                                        root.step = "connect";
+                                    }
+                                }
+                                Button {
+                                    kind: "secondary";
+                                    text: "Try again";
+                                    height: 48px;
+                                    clicked => {
+                                        root.go("verify");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.step == "login": VerticalLayout {
+                        spacing: 16px;
+                        Rise {
+                            Title {
+                                text: root.onboarded ? "Last step: log in" : "Welcome back";
+                            }
+                        }
+                        Rise {
+                            delay: 90ms;
+                            HorizontalLayout {
+                                alignment: start;
+                                Rectangle {
+                                    height: 34px;
+                                    border-radius: 17px;
+                                    background: Theme.accent-soft;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 14px;
+                                        spacing: 8px;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Icon {
+                                                name: "shield";
+                                                size: 16px;
+                                                weight: 2px;
+                                                color: Theme.accent;
+                                            }
+                                        }
+                                        Text {
+                                            text: root.server-label + (root.verified ? " · verified" : "");
+                                            color: Theme.accent;
+                                            font-size: TextSize.caption;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Rise {
+                            delay: 170ms;
+                            VerticalLayout {
+                                spacing: 8px;
+                                Text {
+                                    text: "Password";
+                                    color: Theme.text;
+                                    font-size: TextSize.small;
+                                    font-weight: 700;
+                                }
+                                HorizontalLayout {
+                                    padding-left: 9px + root.nudge;
+                                    padding-right: 9px - root.nudge;
+                                    spacing: 8px;
+                                    TextField {
+                                        text <=> root.password;
+                                        init => {
+                                            self.focus-input();
+                                        }
+                                        password: !reveal.active;
+                                        placeholder: "Your server password";
+                                        label: "Password";
+                                        enabled: !root.login-busy;
+                                        accepted(text) => {
+                                            if (text != "") {
+                                                root.login(text);
+                                            }
+                                        }
+                                    }
+                                    reveal := IconButton {
+                                        size: Metrics.field;
+                                        icon: self.active ? "eye-off" : "eye";
+                                        label: self.active ? "Hide password" : "Show password";
+                                        clicked => {
+                                            self.active = !self.active;
+                                        }
+                                    }
+                                }
+                                if root.login-error != "": Text {
+                                    text: root.login-error;
+                                    color: Theme.danger;
+                                    font-size: TextSize.small;
+                                    wrap: word-wrap;
+                                }
+                                Text {
+                                    text: "The one you chose with “snowpaw-server set-password”. snowpaw keeps you logged in until you quit or log out, and never saves your password.";
+                                    color: Theme.secondary;
+                                    font-size: TextSize.caption;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                        Rise {
+                            delay: 250ms;
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 10px;
+                                Button {
+                                    text: root.login-busy ? "Logging in…" : "Log in";
+                                    height: 48px;
+                                    enabled: !root.login-busy && root.password != "";
+                                    clicked => {
+                                        root.login(root.password);
+                                    }
+                                }
+                                if !root.onboarded: Pressable {
+                                    label: "Use a different server";
+                                    height: 48px;
+                                    border-radius: 24px;
+                                    border-width: self.focused ? 2px : 0px;
+                                    border-color: Theme.accent;
+                                    clicked => {
+                                        root.open-setup();
+                                    }
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        Text {
+                                            text: "Use a different server";
+                                            color: Theme.accent;
+                                            font-size: TextSize.small;
+                                            font-weight: 600;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Copies text to the clipboard through a hidden text field.
+    copier := TextInput {
+        visible: false;
+        width: 0;
+        height: 0;
+    }
+    public function copy(t: string) {
+        copier.text = t;
+        copier.select-all();
+        copier.copy();
+    }
+}

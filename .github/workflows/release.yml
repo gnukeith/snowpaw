@@ -1,0 +1,98 @@
+name: Release
+
+# Builds release archives for a version tag, writes SHA256SUMS, signs build provenance
+# for every file (Sigstore, via GitHub artifact attestations), and publishes a draft
+# release. Verify a download with:
+#   sha256sum -c SHA256SUMS --ignore-missing
+#   gh attestation verify <file> --repo gnukeith/snowpaw
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Desktop client build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev libfontconfig1-dev
+      - name: Build
+        run: cargo build --release --locked -p snowpaw-server -p snowpaw-agent -p snowpaw-client -p snowpaw-render
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          name="snowpaw-${version}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          for bin in snowpaw-server snowpaw-agent snowpaw snowpaw-render; do
+            cp "target/release/$bin" "dist/$name/"
+          done
+          cp LICENSE README.md config/server.example.toml "dist/$name/"
+          cp -R LICENSES docs "dist/$name/"
+          mkdir -p "dist/$name/packaging"
+          cp -R packaging/containers packaging/quadlet packaging/linux "dist/$name/packaging/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          if [ "$RUNNER_OS" = macOS ]; then
+            packaging/macos/build-app.sh --no-build
+            ditto -c -k --keepParent target/release/snowpaw.app "dist/snowpaw-${version}-macos-app.zip"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the release
+      id-token: write # sign provenance (Sigstore, keyless)
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- *.tar.gz *.zip > SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+            --title "snowpaw $GITHUB_REF_NAME" --notes "Verify downloads: see docs/releases.md." \
+            dist/*.tar.gz dist/*.zip dist/SHA256SUMS

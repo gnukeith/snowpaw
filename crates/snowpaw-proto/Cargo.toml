@@ -1,0 +1,17 @@
+[package]
+name = "snowpaw-proto"
+description = "Wire protocol types shared by the snowpaw sync server, desktop client, and agent runtime"
+license = "Apache-2.0"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,162 @@
+// Modal dialogs, drawn over the whole window with a dimmed backdrop.
+
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { Icon } from "icons.slint";
+import { Button } from "components.slint";
+
+// One read-only secret line with a Copy button.
+component CopyLine inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    callback copy(string);
+    property <bool> copied;
+    spacing: 6px;
+    Timer {
+        interval: 1600ms;
+        running: root.copied;
+        triggered => {
+            root.copied = false;
+        }
+    }
+    Text {
+        text: root.label;
+        color: Theme.text;
+        font-size: TextSize.small;
+        font-weight: 700;
+    }
+    Rectangle {
+        border-radius: Metrics.radius-control;
+        border-width: 1px;
+        border-color: Theme.line;
+        background: Theme.code-bg;
+        HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 6px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            spacing: 8px;
+            TextInput {
+                text: root.value;
+                read-only: true;
+                single-line: false;
+                wrap: char-wrap;
+                color: Theme.code-fg;
+                font-family: Theme.mono;
+                font-size: TextSize.caption;
+                horizontal-stretch: 1;
+                accessible-label: root.label;
+            }
+            VerticalLayout {
+                alignment: center;
+                Button {
+                    kind: "secondary";
+                    icon: root.copied ? "check" : "copy";
+                    text: root.copied ? "Copied" : "Copy";
+                    clicked => {
+                        root.copy(root.value);
+                        root.copied = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A new runtime token, shown exactly once.
+export component TokenDialog inherits Rectangle {
+    in property <string> agent;
+    in property <string> token;
+    in property <string> code;
+    callback copy(string);
+    callback done();
+    background: #00000099;
+
+    // Clicks on the backdrop don't reach the window behind it.
+    TouchArea { }
+
+    VerticalLayout {
+        alignment: center;
+        padding: 24px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                preferred-width: 560px;
+                max-width: 560px;
+                horizontal-stretch: 1;
+                border-radius: 22px;
+                background: Theme.menu;
+                border-width: 1px;
+                border-color: Theme.strong;
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 14px;
+                    Text {
+                        text: "Runtime token for " + root.agent;
+                        color: Theme.text;
+                        font-size: TextSize.title;
+                        font-weight: 700;
+                        wrap: word-wrap;
+                    }
+                    Rectangle {
+                        border-radius: Metrics.radius-control;
+                        background: Theme.danger-soft;
+                        HorizontalLayout {
+                            padding: 12px;
+                            spacing: 10px;
+                            VerticalLayout {
+                                alignment: start;
+                                Icon {
+                                    name: "alert";
+                                    color: Theme.danger;
+                                }
+                            }
+                            Text {
+                                text: "Anyone with this token can act as " + root.agent + ". It replaces any earlier token, and it’s shown only once: copy it now.";
+                                color: Theme.text;
+                                font-size: TextSize.small;
+                                wrap: word-wrap;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                    CopyLine {
+                        label: "1. Save the token in a file only you can read (chmod 600)";
+                        value: root.token;
+                        copy(t) => {
+                            root.copy(t);
+                        }
+                    }
+                    CopyLine {
+                        label: "2. Save these two lines as agent.toml";
+                        value: "server = \"" + root.code + "\"\ntoken_file = \"/path/to/token\"";
+                        copy(t) => {
+                            root.copy(t);
+                        }
+                    }
+                    CopyLine {
+                        label: "3. Start " + root.agent;
+                        value: "snowpaw-agent run --config agent.toml";
+                        copy(t) => {
+                            root.copy(t);
+                        }
+                    }
+                    Text {
+                        text: "The runtime won’t start as root or with a token file others can read. It never sees the model’s API key: your server calls the model.";
+                        color: Theme.secondary;
+                        font-size: TextSize.caption;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: end;
+                        Button {
+                            text: "Done";
+                            clicked => {
+                                root.done();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

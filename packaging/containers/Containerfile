@@ -1,0 +1,33 @@
+# snowpaw server and agent runtime images.
+#
+#   podman build -f packaging/containers/Containerfile --target server -t localhost/snowpaw-server .
+#   podman build -f packaging/containers/Containerfile --target agent  -t localhost/snowpaw-agent .
+#
+# Base images are pinned by digest (update both the tag and the digest together).
+# Runtime images are distroless: no shell, no package manager, a non-root user.
+
+ARG RUST_IMAGE=docker.io/library/rust:1.98.0-slim-bookworm@sha256:1469a27c125cb5a3aebfa4f4e4665d935b02fb72cc093b2c974b3d740e43f157
+ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
+
+FROM ${RUST_IMAGE} AS build
+WORKDIR /src
+COPY . .
+# --locked: exactly the versions in Cargo.lock. Only the server and runtime are built;
+# the desktop client's dependencies are never compiled here.
+RUN cargo build --release --locked -p snowpaw-server -p snowpaw-agent
+
+FROM ${RUNTIME_IMAGE} AS server
+COPY --from=build /src/target/release/snowpaw-server /usr/local/bin/snowpaw-server
+# distroless "nonroot" (65532). The server refuses to run as root anyway.
+USER 65532:65532
+# The data dir is created by `init` inside this volume (it must be 0700, so it can't
+# be the volume's root).
+VOLUME ["/var/lib/snowpaw"]
+ENTRYPOINT ["/usr/local/bin/snowpaw-server"]
+CMD ["run", "--config", "/var/lib/snowpaw/data/server.toml"]
+
+FROM ${RUNTIME_IMAGE} AS agent
+COPY --from=build /src/target/release/snowpaw-agent /usr/local/bin/snowpaw-agent
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/snowpaw-agent"]
+CMD ["run", "--config", "/etc/snowpaw-agent/agent.toml"]

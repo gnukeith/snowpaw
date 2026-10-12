@@ -1,0 +1,140 @@
+# cargo-deny: advisories, licenses, banned crates, and allowed sources.
+# Runs in CI on every pull request (see .github/workflows/ci.yml).
+
+[graph]
+# Only the platforms snowpaw supports.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+# Every ignore needs a comment explaining why it doesn't apply, and an expiry plan.
+ignore = [
+    # ttf-parser is unmaintained (not vulnerable). It comes in through winit ->
+    # sctk-adwaita, which draws Wayland window title bars on Linux using local system
+    # fonts; it never parses network data. Slint enables that winit feature and we
+    # can't turn it off from our crate. Revisit when winit/Slint drop sctk-adwaita or
+    # move to a maintained font parser.
+    { id = "RUSTSEC-2026-0192", reason = "unmaintained only; parses local system fonts for Wayland title bars, not network input" },
+    # The rest are all in the render worker (snowpaw-render), through Typst 0.15 and
+    # mitex 0.2, which pin these versions. The worker runs sandboxed (no files, no
+    # network, CPU/memory limits, 5 s per request, killed and restarted on any fault)
+    # and its Typst world is virtual: no files, no bibliography, only vendored sources
+    # and fonts. Revisit with each Typst/mitex upgrade.
+    # quick-xml 0.38 (via typst -> hayagriva -> citationberg): only parses CSL
+    # bibliography styles, which our virtual world never provides; message text never
+    # reaches an XML parser. Fixed in 0.41, which citationberg 0.7 doesn't allow.
+    { id = "RUSTSEC-2026-0194", reason = "render worker only; CSL/XML parsing unreachable from message input; sandboxed; pinned by typst 0.15" },
+    { id = "RUSTSEC-2026-0195", reason = "render worker only; CSL/XML parsing unreachable from message input; sandboxed; pinned by typst 0.15" },
+    # rkyv 0.7 (via mitex-spec): only deserializes mitex's own compiled-in command
+    # table, never untrusted archives. Fixed in 0.8, which mitex 0.2 doesn't allow.
+    { id = "RUSTSEC-2026-0235", reason = "render worker only; archives are mitex's built-in data, never untrusted; sandboxed; pinned by mitex 0.2" },
+    # Unmaintained, not vulnerable: bincode and yaml-rust (syntect loading Typst's
+    # bundled syntaxes), fxhash, paste (a build-time macro), rustybuzz (shaping with
+    # bundled fonts).
+    { id = "RUSTSEC-2025-0141", reason = "unmaintained only; render worker; loads bundled data" },
+    { id = "RUSTSEC-2024-0320", reason = "unmaintained only; render worker; loads bundled data" },
+    { id = "RUSTSEC-2025-0057", reason = "unmaintained only; a hash function, render worker" },
+    { id = "RUSTSEC-2024-0436", reason = "unmaintained only; build-time proc macro" },
+    { id = "RUSTSEC-2026-0206", reason = "unmaintained only; render worker; shapes text with bundled fonts" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+# Permissive licenses compatible with both AGPL-3.0-or-later (server, client) and
+# Apache-2.0 (protocol crate, plugin SDK). Copyleft or proprietary licenses need a
+# maintainer decision before they are added here.
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    # webpki-roots: Mozilla's CA list, as data.
+    "CDLA-Permissive-2.0",
+    # ar_archive_writer (build-time, via typst -> stacker -> psm).
+    "Apache-2.0 WITH LLVM-exception",
+    # roman-numerals-rs (via typst): "0BSD OR CC0-1.0".
+    "0BSD",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+# Slint (the desktop client's UI toolkit) is "GPL-3.0-only OR <Slint's own licenses>".
+# We use it under GPL-3.0-only, which combines with the client's AGPL-3.0-or-later
+# (GPLv3 section 13). Allowed for these crates only, so no other GPL code slips in.
+[[licenses.exceptions]]
+crate = "slint"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "slint-build"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "slint-macros"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "i-slint-backend-selector"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "i-slint-backend-winit"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "i-slint-common"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "i-slint-compiler"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "i-slint-core"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "i-slint-core-macros"
+allow = ["GPL-3.0-only"]
+
+[[licenses.exceptions]]
+crate = "i-slint-renderer-software"
+allow = ["GPL-3.0-only"]
+
+
+[licenses.private]
+# Our own unpublished crates; their licenses are set in each Cargo.toml.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+deny = [
+    # TLS goes through rustls only.
+    { crate = "openssl", reason = "use rustls" },
+    { crate = "openssl-sys", reason = "use rustls" },
+    { crate = "native-tls", reason = "use rustls" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+# giallo (code highlighting, render worker only) is EUPL-1.2, which lists the GPL
+# family as compatible licences; approved by the maintainer for the render worker.
+[[licenses.exceptions]]
+crate = "giallo"
+allow = ["EUPL-1.2"]

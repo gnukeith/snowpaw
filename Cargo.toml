@@ -1,0 +1,105 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/snowpaw-proto",
+    "crates/snowpaw-server",
+    "crates/snowpaw-client",
+    "crates/snowpaw-render",
+    "crates/snowpaw-agent",
+    "crates/snowpaw-plugin-sdk",
+]
+# Example plugins build for wasm32 on their own.
+exclude = ["examples/plugins"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+repository = "https://github.com/gnukeith/snowpaw"
+publish = false
+
+# Every direct dependency is pinned to an exact version; Cargo.lock pins the rest.
+# Adding a dependency requires maintainer approval and a written justification.
+[workspace.dependencies]
+snowpaw-proto = { path = "crates/snowpaw-proto" }
+
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio", "ws"] }
+hyper = { version = "=1.12.0", default-features = false, features = ["http1", "server"] }
+hyper-util = { version = "=0.1.21", default-features = false, features = ["tokio", "service"] }
+tower = { version = "=0.5.3", default-features = false, features = ["util"] }
+tokio = { version = "=1.53.2", default-features = false, features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "io-util", "fs"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["aws_lc_rs", "std", "prefer-post-quantum"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["aws_lc_rs"] }
+# Already in the build as rustls's crypto provider; used directly only for AES-256-GCM
+# to seal secrets (model API keys) at rest. Same features rustls enables.
+aws-lc-rs = { version = "=1.18.1", default-features = false, features = ["aws-lc-sys", "prebuilt-nasm"] }
+# Mozilla's CA roots, compiled in, for the server's HTTPS calls to model APIs. No
+# dependence on the host's certificate store.
+webpki-roots = { version = "=1.0.5", default-features = false }
+rcgen = { version = "=0.14.10", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled"] }
+argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "password-hash", "zeroize"] }
+sha2 = { version = "=0.11.0", default-features = false }
+getrandom = { version = "=0.4.3", default-features = false }
+zeroize = { version = "=1.9.1", default-features = false, features = ["alloc"] }
+serde = { version = "=1.0.229", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "=1.0.152", default-features = false, features = ["std"] }
+toml = { version = "=1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["fmt", "std"] }
+rpassword = { version = "=7.5.4", default-features = false }
+# Desktop client UI. Software renderer only: no OpenGL/GPU driver code paths, and it
+# works in VMs without a GPU (e.g. Qubes).
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "accessibility"] }
+slint-build = { version = "=1.18.1" }
+# Native "choose a picture" dialog (NSOpenPanel on macOS, the XDG desktop portal on
+# Linux). The client never decodes the file; it goes to the sandboxed worker.
+rfd = { version = "=0.17.2", default-features = false, features = ["xdg-portal"] }
+# Markdown parsing in the client (already in the build via Slint).
+pulldown-cmark = { version = "=0.13.4", default-features = false }
+# Render worker only (separate, sandboxed process; the client never links these).
+giallo = { version = "=0.5.2", default-features = false, features = ["dump"] }
+typst = { version = "=0.15.1" }
+typst-render = { version = "=0.15.1" }
+typst-layout = { version = "=0.15.1" }
+typst-assets = { version = "=0.15.1", features = ["fonts"] }
+mitex = { version = "=0.2.4" }
+# Test-only: mitex's default command table (same release as mitex).
+mitex-spec-gen = { version = "=0.2.4" }
+# Render worker only: decodes and re-encodes profile pictures. Pure-Rust decoders for
+# the four common formats only (no AVIF/TIFF/EXR, no C codecs, no rayon).
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# Agent runtime only: runs plugins (core wasm, no WASI, no imports) with fuel, epoch
+# and memory limits. Cranelift JIT; no component model, no async, no caches.
+wasmtime = { version = "=49.0.2", default-features = false, features = ["cranelift", "runtime", "std"] }
+rustix = { version = "=1.1.5", default-features = false, features = ["std", "process"] }
+landlock = { version = "=0.4.7" }
+
+# Test-only.
+# Plugins written as WebAssembly text in tests.
+wat = { version = "=1.261.0" }
+tempfile = { version = "=3.27.0", default-features = false }
+tokio-tungstenite = { version = "=0.29.0", default-features = false, features = ["handshake"] }
+futures-util = { version = "=0.3.34", default-features = false, features = ["sink"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+dbg_macro = "deny"
+todo = "deny"
+
+# panic = "unwind" (the default) on purpose: a panic reachable from network input must
+# take down one connection task, not the whole server.
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"
+
+# Argon2id is unusably slow unoptimized; keep tests realistic and fast.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

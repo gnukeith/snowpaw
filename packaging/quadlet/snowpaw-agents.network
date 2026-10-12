@@ -1,0 +1,8 @@
+# The network agents live on: internal, so it has no route anywhere but to the
+# server's agent listener. Agents can't reach the internet, your LAN, or each other's
+# services (the runtimes listen on nothing).
+[Network]
+NetworkName=snowpaw-agents
+Internal=true
+Subnet=10.89.42.0/24
+Gateway=10.89.42.1

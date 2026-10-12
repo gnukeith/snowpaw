@@ -1,0 +1,418 @@
+// Settings: appearance, font, and the server this window is connected to.
+
+import { Theme, Metrics, TextSize } from "theme.slint";
+import { AuditRow } from "types.slint";
+import { Icon, Wordmark } from "icons.slint";
+import { Pressable, IconButton, Button, TextField, SectionLabel, Segmented, Switch, Divider } from "components.slint";
+
+component Choice inherits Pressable {
+    in property <string> title;
+    in property <string> detail;
+    in property <bool> checked;
+    label: root.title;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    height: 60px;
+    border-radius: Metrics.radius-control;
+    background: root.pressed ? Theme.selected : (root.hovered ? Theme.hover : transparent);
+    border-width: root.focused ? 2px : 0px;
+    border-color: Theme.accent;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                border-radius: 10px;
+                border-width: 2px;
+                border-color: root.checked ? Theme.accent : Theme.strong;
+                if root.checked: Rectangle {
+                    x: 5px;
+                    y: 5px;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    background: Theme.accent;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: TextSize.body;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.secondary;
+                font-size: TextSize.caption;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+component Group inherits VerticalLayout {
+    in property <string> title;
+    spacing: 8px;
+    HorizontalLayout {
+        padding-left: 6px;
+        SectionLabel {
+            text: root.title;
+        }
+    }
+    Rectangle {
+        border-radius: Metrics.radius-card;
+        background: Theme.raised;
+        VerticalLayout {
+            padding: 6px;
+            spacing: 2px;
+            @children
+        }
+    }
+}
+
+export component SettingsView inherits Rectangle {
+    in property <string> server-address;
+    in property <string> server-fingerprint;
+    callback close();
+    callback set-font(string);
+    callback set-appearance(string);
+    callback set-reduce-motion(bool);
+    in property <[AuditRow]> audit;
+    in property <string> app-version;
+    in property <bool> audit-has-more;
+    callback load-audit(bool);
+
+    property <int> font-choice: Theme.font == "" ? 0 : (Theme.font == "System" ? 1 : 2);
+    property <string> custom-font;
+    background: Theme.ground;
+
+    init => {
+        root.custom-font = root.font-choice == 2 ? Theme.font : "";
+        root.load-audit(false);
+    }
+
+    VerticalLayout {
+        HorizontalLayout {
+            height: Metrics.header-height;
+            padding-left: 24px;
+            padding-right: 14px;
+            Text {
+                text: "Settings";
+                color: Theme.text;
+                font-size: TextSize.heading;
+                font-weight: 700;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: "close";
+                    label: "Close settings";
+                    clicked => {
+                        root.close();
+                    }
+                }
+            }
+        }
+        Divider { }
+
+        flick := Flickable {
+            vertical-stretch: 1;
+            content-height: page.preferred-height;
+            HorizontalLayout {
+                width: flick.width;
+                alignment: center;
+                padding-left: 24px;
+                padding-right: 24px;
+                page := VerticalLayout {
+                    width: min(640px, root.width - 48px);
+                    padding-top: 24px;
+                    padding-bottom: 32px;
+                    spacing: 28px;
+
+                    VerticalLayout {
+                        spacing: 10px;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            SectionLabel {
+                                text: "APPEARANCE";
+                            }
+                        }
+                        HorizontalLayout {
+                            alignment: start;
+                            Segmented {
+                                items: ["System", "Light", "Dark"];
+                                current: Theme.appearance == "light" ? 1 : (Theme.appearance == "dark" ? 2 : 0);
+                                picked(i) => {
+                                    root.set-appearance(i == 1 ? "light" : (i == 2 ? "dark" : "system"));
+                                }
+                            }
+                        }
+                    }
+
+                    Group {
+                        title: "MOTION";
+                        Switch {
+                            text: "Reduce motion";
+                            detail: "Turns off falling snow and other decorative animation.";
+                            on: Theme.reduce-motion;
+                            clicked => {
+                                root.set-reduce-motion(!Theme.reduce-motion);
+                            }
+                        }
+                    }
+
+                    Group {
+                        title: "FONT";
+                        Choice {
+                            title: "Figtree";
+                            detail: "Default · comes with snowpaw";
+                            checked: root.font-choice == 0;
+                            clicked => {
+                                root.set-font("");
+                            }
+                        }
+                        Choice {
+                            title: "System font";
+                            detail: "The font your desktop uses";
+                            checked: root.font-choice == 1;
+                            clicked => {
+                                root.set-font("System");
+                            }
+                        }
+                        Choice {
+                            title: "Another installed font";
+                            detail: root.font-choice == 2 ? Theme.font : "Type its name below";
+                            checked: root.font-choice == 2;
+                            clicked => {
+                                if (root.custom-font != "") {
+                                    root.set-font(root.custom-font);
+                                } else {
+                                    custom.focus-input();
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            padding-left: 48px;
+                            padding-right: 8px;
+                            padding-bottom: 8px;
+                            spacing: 8px;
+                            custom := TextField {
+                                placeholder: "Font name, e.g. Atkinson Hyperlegible";
+                                label: "Installed font name";
+                                text <=> root.custom-font;
+                                accepted(t) => {
+                                    if (t != "") {
+                                        root.set-font(t);
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Button {
+                                    kind: "secondary";
+                                    text: "Use";
+                                    enabled: root.custom-font != "";
+                                    clicked => {
+                                        root.set-font(root.custom-font);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            SectionLabel {
+                                text: "PREVIEW";
+                            }
+                        }
+                        Rectangle {
+                            border-radius: Metrics.radius-card;
+                            border-width: 1px;
+                            border-color: Theme.line;
+                            VerticalLayout {
+                                padding: 18px;
+                                spacing: 6px;
+                                Text {
+                                    text: "Snow falls quietly on the pine trees.";
+                                    color: Theme.text;
+                                    font-size: TextSize.title;
+                                    font-weight: 700;
+                                    wrap: word-wrap;
+                                }
+                                Text {
+                                    text: "Messages, names and menus use this font. If the name doesn’t match an installed font, the text falls back to the default.";
+                                    color: Theme.secondary;
+                                    font-size: TextSize.body;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            SectionLabel {
+                                text: "SECURITY LOG";
+                            }
+                        }
+                        Text {
+                            text: "Sign-ins, tokens, permission changes and pauses, newest first. Messages are never logged.";
+                            color: Theme.secondary;
+                            font-size: TextSize.caption;
+                            wrap: word-wrap;
+                        }
+                        Rectangle {
+                            border-radius: Metrics.radius-card;
+                            background: Theme.raised;
+                            VerticalLayout {
+                                padding-top: 6px;
+                                padding-bottom: 6px;
+                                if root.audit.length == 0: Text {
+                                    text: "Nothing logged yet.";
+                                    color: Theme.secondary;
+                                    font-size: TextSize.small;
+                                    horizontal-alignment: center;
+                                    height: 52px;
+                                    vertical-alignment: center;
+                                }
+                                for entry[i] in root.audit: VerticalLayout {
+                                    if i > 0: Rectangle {
+                                        height: 1px;
+                                        background: Theme.line;
+                                    }
+                                    HorizontalLayout {
+                                        padding-left: 16px;
+                                        padding-right: 16px;
+                                        padding-top: 10px;
+                                        padding-bottom: 10px;
+                                        spacing: 12px;
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            spacing: 2px;
+                                            Text {
+                                                text: entry.title;
+                                                color: Theme.text;
+                                                font-size: TextSize.small;
+                                                font-weight: 600;
+                                            }
+                                            if entry.detail != "": Text {
+                                                text: entry.detail;
+                                                color: Theme.secondary;
+                                                font-size: TextSize.caption;
+                                                wrap: word-wrap;
+                                            }
+                                        }
+                                        Text {
+                                            text: entry.time;
+                                            color: Theme.secondary;
+                                            font-size: TextSize.caption;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if root.audit-has-more: HorizontalLayout {
+                            alignment: start;
+                            Button {
+                                kind: "secondary";
+                                text: "Show older";
+                                clicked => {
+                                    root.load-audit(true);
+                                }
+                            }
+                        }
+                    }
+
+                    Group {
+                        title: "SERVER";
+                        HorizontalLayout {
+                            padding: 10px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: start;
+                                Icon {
+                                    name: "shield";
+                                    color: Theme.accent;
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 4px;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: root.server-address;
+                                    color: Theme.text;
+                                    font-size: TextSize.body;
+                                    font-weight: 600;
+                                    wrap: word-wrap;
+                                }
+                                Text {
+                                    text: "Pinned certificate fingerprint";
+                                    color: Theme.secondary;
+                                    font-size: TextSize.caption;
+                                }
+                                Text {
+                                    text: root.server-fingerprint;
+                                    color: Theme.text;
+                                    font-size: TextSize.caption;
+                                    font-family: Theme.mono;
+                                    wrap: word-wrap;
+                                }
+                                Text {
+                                    text: "To use a different server, log out and open Server settings.";
+                                    color: Theme.secondary;
+                                    font-size: TextSize.caption;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+
+                    Group {
+                        title: "ABOUT";
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 6px;
+                            Wordmark {
+                                size: 22px;
+                            }
+                            Text {
+                                text: "Version " + root.app-version;
+                                color: Theme.secondary;
+                                font-size: TextSize.caption;
+                            }
+                            Text {
+                                text: "snowpaw is AGPL-3.0-or-later; the protocol and plugin SDK are Apache-2.0.";
+                                color: Theme.text;
+                                font-size: TextSize.small;
+                                wrap: word-wrap;
+                            }
+                            Text {
+                                text: "Verify downloads: see docs/releases.md in the snowpaw repository.";
+                                color: Theme.secondary;
+                                font-size: TextSize.caption;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

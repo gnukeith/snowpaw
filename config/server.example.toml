@@ -1,0 +1,126 @@
+# snowpaw sync server configuration.
+#
+# `snowpaw-server init <DATA_DIR>` writes a copy of this file to <DATA_DIR>/server.toml
+# with `data_dir` filled in. Every setting below is shown with its default value.
+# Unknown keys are an error: a typo stops the server instead of silently falling back to a
+# default. Values outside the documented range are an error too.
+#
+# There is deliberately no setting to turn off TLS, authentication, or the browser block.
+
+[server]
+# Address and port to listen on.
+#   - Default is loopback only: nothing else on your network can connect.
+#   - 0.0.0.0 and :: (all interfaces) are always rejected. Bind one specific interface instead.
+#   - Any non-loopback address also requires `allow_non_loopback = true`. Use it only for
+#     an address on a VPN (WireGuard/Tailscale) or an isolated agent network segment.
+#     Never expose this port to the internet. See docs/threat-model.md.
+listen = "127.0.0.1:7443"
+allow_non_loopback = false
+
+# Where the database, TLS key, and certificate live. Must be an absolute path to a
+# directory owned by the user running the server, with mode 0700.
+data_dir = "/var/lib/snowpaw"
+
+[tls]
+# TLS 1.3 only. By default `init` generates a self-signed certificate in data_dir and
+# clients pin its SHA-256 fingerprint (`snowpaw-server fingerprint --config ...`).
+# Set both to use your own certificate and key instead (PEM, absolute paths, key mode 0600).
+# cert_file = "/path/to/cert.pem"
+# key_file = "/path/to/key.pem"
+
+[auth]
+# A session ends after this long without activity. Range: 300 .. 7776000 (90 days).
+session_idle_timeout_secs = 604800
+# A session ends this long after login regardless of activity.
+# Range: 3600 .. 31536000 (365 days), and at least session_idle_timeout_secs.
+session_max_lifetime_secs = 2592000
+# Maximum concurrent sessions (e.g. one per device). Logging in beyond this ends the
+# oldest session. Range: 1 .. 64.
+max_sessions = 8
+# Failed logins allowed before backoff starts. Range: 1 .. 20.
+login_free_failures = 5
+# After that, each further failure locks login for base * 2^n seconds, capped at max.
+# Locks survive restarts. There is one lock per device that has logged in before
+# (identified by a device token the client keeps) and one shared lock for unknown
+# devices, so someone guessing passwords can lock out new devices but not yours.
+# base range: 1 .. 60. max range: base .. 86400.
+login_backoff_base_secs = 2
+login_backoff_max_secs = 900
+# How many known devices to remember (least recently used are forgotten first), and
+# for how long. Changing the password forgets them all.
+# Ranges: 1 .. 64 and 86400 (1 day) .. 63072000 (2 years).
+max_login_devices = 16
+login_device_lifetime_secs = 31536000
+
+[limits]
+# Maximum simultaneous connections. Extra connections are dropped. Range: 1 .. 4096.
+max_connections = 64
+# Maximum simultaneous connections from one IPv4 address or one IPv6 /64, so a single
+# peer can't take every slot. Local clients and agents on the same host share one
+# address, so leave room for them. Range: 1 .. max_connections.
+max_connections_per_ip = 32
+# Connections that haven't finished the TLS handshake by then are dropped. Range: 1 .. 60.
+tls_handshake_timeout_secs = 5
+# Time allowed to send the complete request headers, and the complete request body.
+# These are total deadlines, not inactivity timeouts. Range: 1 .. 60.
+http_header_timeout_secs = 10
+http_body_timeout_secs = 10
+# Largest accepted HTTP request body. Range: 1024 .. 1048576.
+max_http_body_bytes = 16384
+# Largest accepted WebSocket message. Range: 1024 .. 1048576.
+max_ws_message_bytes = 65536
+# Largest chat message (text bytes). Range: 1 .. 65536, and at most
+# (max_ws_message_bytes - 512) / 2 so an escaped message always fits in a frame.
+max_message_bytes = 16384
+# Per-connection WebSocket rate limit: sustained messages per second, and burst size.
+# A client that exceeds it is disconnected. Ranges: 1 .. 1000 and 1 .. 10000.
+ws_messages_per_sec = 20
+ws_burst = 40
+# A WebSocket that sends nothing (not even a pong) for this long is closed. Range: 10 .. 3600.
+ws_idle_timeout_secs = 60
+# How often an open WebSocket re-checks that its session still exists, so revocations
+# made by another process (e.g. `set-password`) take effect. Range: 1 .. 300.
+session_recheck_secs = 30
+
+[log]
+# One of: error, warn, info, debug. Applies to snowpaw's own logs; dependencies are
+# capped at warn. Passwords, tokens, and message contents are never logged at any level.
+level = "info"
+
+[agents]
+# Limits on agents. The server enforces these whatever an agent runtime or its model
+# does; a runtime can't raise them.
+#
+# Largest WebSocket message to or from an agent runtime (inference requests carry the
+# conversation). The runtime is told this limit and trims its requests to fit. The
+# minimum (1179648) is the largest inference request the protocol's size rules allow,
+# so a rule-following runtime always fits. Range: 1179648 .. 8388608.
+max_ws_message_bytes = 2097152
+# Longest back-and-forth between agents that one message can start. Each reply from
+# one agent to another counts one level; past this, posts are refused. Range: 1 .. 32.
+max_depth = 6
+# Messages one agent may post per minute, across all its chats. Range: 1 .. 600.
+messages_per_minute = 12
+# Messages one agent may post per hour in one conversation with another agent.
+# Range: 1 .. 3600.
+link_messages_per_hour = 60
+# Model calls one agent may make per minute. Range: 1 .. 600.
+inference_per_minute = 10
+# A model call is abandoned after this many seconds. Range: 10 .. 1800.
+inference_timeout_secs = 180
+# Largest model API response accepted, in bytes. Range: 65536 .. 33554432.
+max_inference_response_bytes = 4194304
+# URL fetches one agent's plugins may make per minute (each also has to be to a host
+# you granted, over HTTPS, to a public address). Range: 1 .. 600.
+fetches_per_minute = 30
+# A scheduled job's run that hasn't finished after this many seconds is given up on and
+# retried later (at most 3 tries). Range: 60 .. 86400.
+job_run_timeout_secs = 900
+
+[secrets]
+# The 32-byte key that seals secrets (model API keys) in the database. By default it is
+# <data_dir>/secrets.key, created on first start. To keep it off the data volume, point
+# this at another file, e.g. a systemd credential sealed to the TPM:
+#   LoadCredentialEncrypted=secrets.key:/etc/credstore.encrypted/snowpaw-secrets.key
+#   key_file = "/run/credentials/snowpaw-server.service/secrets.key"
+# key_file = "/path/to/secrets.key"

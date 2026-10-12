@@ -1,0 +1,6 @@
+# The server's own network: the desktop client reaches it through the published port,
+# and the server reaches model APIs and plugin fetches through it.
+[Network]
+NetworkName=snowpaw-front
+Subnet=10.89.43.0/24
+Gateway=10.89.43.1
