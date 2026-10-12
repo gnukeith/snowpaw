@@ -18,6 +18,33 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  hygiene:
+    # The banned token is kept in the CI_BANNED_TOKEN secret; grep stays
+    # quiet so matches never land in build logs.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history so every commit is checked, not just the tip.
+          fetch-depth: 0
+      - name: Banned token absent from metadata and sources
+        env:
+          BANNED: ${{ secrets.CI_BANNED_TOKEN }}
+        run: |
+          if [ -z "$BANNED" ]; then
+            echo "::error::repo secret CI_BANNED_TOKEN is not set (Settings → Secrets and variables → Actions)" >&2
+            exit 1
+          fi
+          if git log --all --format='%an%n%ae%n%cn%n%ce%n%B' | grep -qi "$BANNED"; then
+            echo "::error::banned token in commit metadata" >&2
+            exit 1
+          fi
+          if git grep -qi "$BANNED" HEAD; then
+            echo "::error::banned token in tracked file contents" >&2
+            exit 1
+          fi
+
   test:
     name: test (${{ matrix.os }})
     strategy:
