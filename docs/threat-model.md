@@ -345,14 +345,13 @@ that server requires deployment isolation (see "Trust assumptions").
   and reply limits therefore depend on provider behavior. A failed call still
   charges its prompt estimate. Usage rows older than 48 hours are pruned hourly
   while the server runs; the accounting window is 24 hours.
-- **Frame budgets.** The server sizes sync pages, chat lists and inference replies
-  against the receiving socket's write limit (4 × its `max_ws_message_bytes`). This
-  is not an unconditional guarantee that every response fits: chat lists and sync
-  pages retain their first summary or message even if it exceeds the budget, and
-  plugin fetch bodies have a separate raw-byte limit and can expand when encoded
-  as JSON. Chat lists carry
-  one-line previews of last messages, never the bodies; sync pages stop early with
-  `has_more`.
+- **Frame budgets.** The server sizes sync pages and chat lists against the receiving
+  socket's write limit (4 × its `max_ws_message_bytes`). Inference replies use fixed
+  text and tool-call caps. This does not guarantee that every response fits: chat
+  lists and sync pages retain their first summary or message even if it exceeds
+  the budget. Plugin fetch bodies have a separate raw-byte limit and can expand
+  when encoded as JSON. Chat lists carry one-line previews of last messages, never
+  the bodies; sync pages stop early with `has_more`.
   The runtime is told the agent socket's limit in `Welcome` and trims its inference
   requests (oldest context first) using their serialized size. Config validation
   applies a minimum derived from `infer_frame_bound()`; this does not replace
@@ -532,7 +531,7 @@ above. They describe current behavior, not fixes to those limitations.
 | Profile picture consistency | [Downloaded-byte hash check](../crates/snowpaw-client/src/net.rs#L260-L277), [profile reference updates](../crates/snowpaw-client/src/store.rs#L740-L747) |
 | Model accounting | [Reservation and settlement](../crates/snowpaw-server/src/inference.rs#L62-L133), [provider usage](../crates/snowpaw-server/src/inference.rs#L266-L308) |
 | Usage retention | [Hourly maintenance and 48-hour cutoff](../crates/snowpaw-server/src/server.rs#L171-L183) |
-| Frame sizing | [Chat lists and sync pages](../crates/snowpaw-server/src/chat_ops.rs#L24-L118), [stock runtime request sizing](../crates/snowpaw-agent/src/runtime.rs#L539-L567) |
+| Frame sizing | [Chat lists and sync pages](../crates/snowpaw-server/src/chat_ops.rs#L24-L118), [inference reply caps](../crates/snowpaw-server/src/inference.rs#L286-L308), [stock runtime request sizing](../crates/snowpaw-agent/src/runtime.rs#L539-L567) |
 | Reply depth and rates | [Posting policy](../crates/snowpaw-server/src/chat_ops.rs#L190-L229) |
 | Plugin fetches | [Task lifetime](../crates/snowpaw-server/src/agent_ws.rs#L278-L293), [admission checks](../crates/snowpaw-server/src/agent_ws.rs#L599-L619), [redirects and deadlines](../crates/snowpaw-server/src/fetch.rs#L132-L147) |
 | Audit text | [Job-title audit field](../crates/snowpaw-server/src/agent_ws.rs#L485-L525) |
